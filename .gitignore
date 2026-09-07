@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+.cache/
+.data/
+*.log
+*.tsbuildinfo
+
+# Local research, recordings and design references are not release assets.
+research/
+private/
+
+# Never commit credentials or machine-access material.
+*.pem
+*.key
+*.p12
+*.pfx
+authorized_keys
+credentials.json

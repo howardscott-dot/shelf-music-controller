@@ -1,0 +1,20 @@
+{
+  "name": "shelf",
+  "description": "A touch-first, self-hosted music controller for browsing albums as CDs and cassettes, with Jellyfin, Spotify and WiiM playback.",
+  "private": true,
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "concurrently -n server,web -c yellow,cyan \"npm run dev -w @shelf/server\" \"npm run dev -w @shelf/web\"",
+    "build": "npm run build -w @shelf/server && npm run build -w @shelf/web",
+    "test": "npm run test -w @shelf/server && npm run test -w @shelf/web",
+    "typecheck": "npm run typecheck -w @shelf/server && npm run typecheck -w @shelf/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  },
+  "engines": { "node": ">=20" }
+}
