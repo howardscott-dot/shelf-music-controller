@@ -6,6 +6,24 @@ SHELF is a platform-independent web controller for Jellyfin and, optionally, Spo
 
 SHELF is an independent open-source project. It is not affiliated with or endorsed by any music-service, hardware or artwork provider. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for service, artwork, font and trademark information.
 
+## The interface
+
+![SHELF playing an album in its full-height transparent CD player](docs/screenshots/03-cd-player.jpg)
+
+| CD collection | Tape collection |
+| --- | --- |
+| ![A collection of realistic CD spines in SHELF](docs/screenshots/02-cd-shelf.jpg) | ![The same collection presented as cassette cases](docs/screenshots/07-tape-shelf.jpg) |
+
+| Album artwork | Cassette playback |
+| --- | --- |
+| ![An album opened at full shelf height](docs/screenshots/04-album-cover.jpg) | ![SHELF's transparent cassette player with handwritten album label](docs/screenshots/08-cassette-player.jpg) |
+
+| Music Guide | Album Intelligence |
+| --- | --- |
+| ![The touch-friendly natural-language Music Guide](docs/screenshots/06-music-guide.jpg) | ![The Album Intelligence drawer with release context and related records](docs/screenshots/05-album-intelligence.jpg) |
+
+![SHELF's source and appearance chooser](docs/screenshots/01-source-picker.jpg)
+
 Choose **CD spines** or **Tapes** on the launch screen, or use the **CDs/Tapes** footer button while browsing. Tape mode uses genuine cassette packaging from MusicBrainz/Cover Art Archive when it can match the edition, and a restrained readable text insert when it cannot. Your display choice is saved per browser/device and applies to both sources. Switching styles preserves the open cover and browsing position and never changes playback. Jellyfin's back-cover flip remains available; Spotify artwork stays unmodified in CD mode.
 
 ## Milestone 1 architecture
