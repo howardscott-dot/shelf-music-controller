@@ -15,7 +15,7 @@ export function AlbumView({ album, loading, onClose, onPlay }: { album?: AlbumDe
         <div className="case-hinge" aria-hidden="true" />
         <div className="case-panel case-back">
           {!backUnavailable && album.backArtworkUrl
-            ? <img src={versionedArtwork(album.backArtworkUrl, 4)} alt={`${album.title} back cover`} onError={() => setBackUnavailable(true)} />
+            ? <img src={versionedArtwork(album.backArtworkUrl, 7)} alt={`${album.title} back cover`} onError={() => setBackUnavailable(true)} />
             : <div className="art-unavailable"><span>BACK ART</span><small>NOT ARCHIVED</small></div>}
         </div>
       </div>
