@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { opendir, readFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, opendir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, relative, resolve, sep } from 'node:path';
 import { parseFile } from 'music-metadata';
 import type { AlbumDetail, AlbumSummary, Track } from './types.js';
@@ -14,6 +14,7 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 
 interface LocalTrack extends Track { file: string }
 interface LocalAlbum extends AlbumDetail { localTracks: LocalTrack[]; folder: string }
+interface LibrarySnapshot { version: 1; root: string; scannedAt: number; albums: LocalAlbum[] }
 
 async function walk(directory: string, output: string[]) {
   const entries = await opendir(directory);
@@ -30,11 +31,12 @@ export class FileLibrary {
   private tracksById = new Map<string, LocalTrack>();
   private scannedAt = 0;
   private scanning?: Promise<void>;
-  constructor(private readonly root?: string, private readonly publicUrl?: string) {}
+  private cacheLoaded = false;
+  constructor(private readonly root?: string, private readonly publicUrl?: string, private readonly cacheFile?: string) {}
   get configured() { return Boolean(this.root && this.publicUrl); }
   async status() {
     if (!this.configured) return { configured: false };
-    try { const info = await stat(resolve(this.root!)); if (!info.isDirectory()) throw new Error('The configured music path is not a folder.'); return { configured: true, connected: true, path: basename(this.root!), albums: this.scannedAt ? this.albumsById.size : undefined }; }
+    try { const info = await stat(resolve(this.root!)); if (!info.isDirectory()) throw new Error('The configured music path is not a folder.'); await this.loadCache(); return { configured: true, connected: true, path: basename(this.root!), albums: this.scannedAt ? this.albumsById.size : undefined }; }
     catch (error) { return { configured: true, connected: false, error: error instanceof Error ? error.message : 'Music folder unavailable' }; }
   }
   private requireConfig() {
@@ -42,10 +44,42 @@ export class FileLibrary {
   }
   private async ensure(force = false) {
     this.requireConfig();
-    if (!force && this.scannedAt && Date.now() - this.scannedAt < scanFreshnessMs) return;
+    await this.loadCache();
+    if (!force && this.scannedAt) {
+      if (Date.now() - this.scannedAt >= scanFreshnessMs && !this.scanning) void this.beginScan().catch(() => undefined);
+      return;
+    }
+    return this.beginScan();
+  }
+  private beginScan() {
     if (this.scanning) return this.scanning;
     this.scanning = this.scan().finally(() => { this.scanning = undefined; });
     return this.scanning;
+  }
+  private async loadCache() {
+    if (this.cacheLoaded || !this.cacheFile || !this.root) return;
+    this.cacheLoaded = true;
+    try {
+      const snapshot = JSON.parse(await readFile(this.cacheFile, 'utf8')) as LibrarySnapshot;
+      const root = resolve(this.root);
+      if (snapshot.version !== 1 || resolve(snapshot.root) !== root || !Array.isArray(snapshot.albums) || !Number.isFinite(snapshot.scannedAt)) return;
+      const albums = new Map<string, LocalAlbum>();
+      const tracks = new Map<string, LocalTrack>();
+      for (const album of snapshot.albums) {
+        if (!album?.id || !Array.isArray(album.localTracks) || album.localTracks.some((track) => !track?.id || !resolve(track.file).startsWith(`${root}${sep}`))) return;
+        albums.set(album.id, album);
+        for (const track of album.localTracks) tracks.set(track.id, track);
+      }
+      this.albumsById = albums; this.tracksById = tracks; this.scannedAt = snapshot.scannedAt;
+    } catch { /* No usable cache yet; the first request will build one. */ }
+  }
+  private async saveCache() {
+    if (!this.cacheFile || !this.root) return;
+    await mkdir(dirname(this.cacheFile), { recursive: true });
+    const temporary = `${this.cacheFile}.${process.pid}.tmp`;
+    const snapshot: LibrarySnapshot = { version: 1, root: resolve(this.root), scannedAt: this.scannedAt, albums: [...this.albumsById.values()] };
+    await writeFile(temporary, JSON.stringify(snapshot), { encoding: 'utf8', mode: 0o600 });
+    await rename(temporary, this.cacheFile);
   }
   private async scan() {
     const files: string[] = [];
@@ -89,6 +123,7 @@ export class FileLibrary {
       album.durationSeconds = album.tracks.reduce((total, track) => total + track.durationSeconds, 0);
     }
     this.albumsById = albums; this.tracksById = tracks; this.scannedAt = Date.now();
+    await this.saveCache();
   }
   private public(path: string) { return new URL(path, this.publicUrl).toString(); }
   async albums(start = 0, limit = 100) {

@@ -19,3 +19,19 @@ it('turns a mounted Artist/Album folder into a safe playable library with range-
   expect(library.streamUrl(album.tracks[0]!.id)).toMatch(/^http:\/\/shelf\.local:8787\/api\/files\/audio\//);
   expect((await library.artwork(album.id))?.data.toString()).toBe('image');
 });
+
+it('reopens a cached LAN library immediately and refreshes it explicitly', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'shelf-files-cache-'));
+  const firstAlbum = join(directory, 'Artist', 'First Album');
+  const cache = join(directory, '.shelf-cache', 'library.json');
+  await mkdir(firstAlbum, { recursive: true });
+  await writeFile(join(firstAlbum, '01 - Track.wav'), silentWave());
+  expect((await new FileLibrary(directory, 'http://shelf.local:8787', cache).albums()).total).toBe(1);
+
+  const secondAlbum = join(directory, 'Artist', 'Second Album');
+  await mkdir(secondAlbum, { recursive: true });
+  await writeFile(join(secondAlbum, '01 - Track.wav'), silentWave());
+  const reopened = new FileLibrary(directory, 'http://shelf.local:8787', cache);
+  expect((await reopened.albums()).total).toBe(1);
+  expect((await reopened.refresh()).albums).toBe(2);
+});

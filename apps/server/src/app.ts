@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from './config.js';
 import { JellyfinClient } from './jellyfin.js';
@@ -22,7 +23,7 @@ export function buildApp(config: Config) {
   const outputs = new OutputManager(config.SHELF_DATA_DIR, config.WIIM_HOST || undefined, config.WIIM_PORT);
   const spotify = new SpotifyClient(config);
   const plex = new PlexClient(config.PLEX_URL || undefined, config.PLEX_TOKEN || undefined, config.PLEX_MUSIC_LIBRARY_ID || undefined);
-  const files = new FileLibrary(config.FILES_MUSIC_PATH || undefined, config.SHELF_PUBLIC_URL || undefined);
+  const files = new FileLibrary(config.FILES_MUSIC_PATH || undefined, config.SHELF_PUBLIC_URL || undefined, resolve(config.SHELF_DATA_DIR, 'file-library-v1.json'));
   const playback = new JellyfinPlayback(outputs, jellyfin, (albumId) => {
     const artwork = jellyfin.imageUrl(albumId, 720);
     artwork.searchParams.set('api_key', config.JELLYFIN_API_KEY);
