@@ -17,7 +17,7 @@ export function CassetteSpine({ album, left, loading, onSelect }: { album: Album
   }, []);
   const scan = artwork?.spineUrl;
   const ready = !!scan && loaded === scan && failed !== scan;
-  return <button ref={ref} className={`spine tape-spine tape-paper-${hashHue(album.id) % 4} ${ready ? 'cassette-scan-spine' : ''} ${loading ? 'loading' : ''}`} style={{ left, '--hue': hashHue(album.id) } as CSSProperties} onClick={onSelect} aria-label={`${album.artist} — ${album.title}`} title={`${album.artist} — ${album.title}${ready ? ' · Original cassette spine' : ' · Text label; original spine scan not available'}`}>
+  return <button ref={ref} className={`spine tape-spine tape-paper-${hashHue(album.id) % 4} ${ready ? 'cassette-scan-spine' : ''} ${loading ? 'loading' : ''}`} style={{ '--shelf-left': `${left}px`, '--hue': hashHue(album.id) } as CSSProperties} onClick={onSelect} aria-label={`${album.artist} — ${album.title}`} title={`${album.artist} — ${album.title}${ready ? ' · Original cassette spine' : ' · Text label; original spine scan not available'}`}>
     {scan && failed !== scan && <img className="cassette-spine-image" src={scan} alt="" draggable={false} onLoad={() => setLoaded(scan)} onError={() => setFailed(scan)} />}
     {!ready && <><span className="tape-insert" aria-hidden="true" /><span className="tape-format-mark" aria-hidden="true">TAPE</span><span className="spine-title">{album.title}</span><span className="spine-artist">{album.artist}</span></>}
   </button>;
@@ -29,7 +29,7 @@ export function CassetteCover({ album, artwork, left, size, onClose, onPlay }: {
   const [backFailed, setBackFailed] = useState(false);
   const [frontFailed, setFrontFailed] = useState(false);
   const [frontReady, setFrontReady] = useState(false);
-  return <article className={`expanded-album cassette-album ${flipped ? 'flipped' : ''}`} style={{ left, width: size }} onClick={onClose} aria-label={`${album.title} cassette sleeve. Tap to close.`}>
+  return <article className={`expanded-album cassette-album ${flipped ? 'flipped' : ''}`} style={{ '--shelf-left': `${left}px`, width: size } as CSSProperties} onClick={onClose} aria-label={`${album.title} cassette sleeve. Tap to close.`}>
     <div className="cassette-image-area">
       {!frontReady && !frontFailed && <img className="cassette-loading-cover" src={album.artworkUrl} alt={`${album.title} album cover while the cassette scan loads`} draggable={false} />}
       <div className="cover-card">

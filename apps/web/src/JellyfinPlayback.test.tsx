@@ -34,8 +34,9 @@ it('uses the server queue for Next after reloading, without needing an open albu
 it('browsing a different album does not change which queue Next and Previous control', async () => {
   await open(); await click([...container.querySelectorAll('.spine')][0]);
   expect(container.querySelector('.cd-media-player')).toBeTruthy();
-  await click(container.querySelector('.player-close'));
-  await click([...container.querySelectorAll('.spine')].find((item) => item.getAttribute('aria-label')?.includes('Browsing album'))); expect(container.querySelector('.expanded-album')?.getAttribute('aria-label')).toContain('Browsing album');
+  await click(container.querySelector('.player-close')); await act(async () => Promise.resolve());
+  await click([...container.querySelectorAll('.spine')].find((item) => item.getAttribute('aria-label')?.includes('Browsing album'))); await act(async () => Promise.resolve());
+  expect(container.querySelector('.expanded-album')?.getAttribute('aria-label')).toContain('Browsing album');
   await click(container.querySelector('[aria-label="Next track"]')); await click(container.querySelector('[aria-label="Previous track"]'));
   expect(mock.control).toHaveBeenCalledWith('next', undefined); expect(mock.control).toHaveBeenCalledWith('previous', undefined);
   expect(mock.playTrack).not.toHaveBeenCalled();

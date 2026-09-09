@@ -116,9 +116,12 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
   }
   async function openAlbum(album: AlbumSummary) {
     const request = ++selectionRequest.current;
+    // Open immediately from the summary already on the shelf. The full track
+    // list replaces this optimistic view as soon as the media server replies.
+    setSelected({ ...album, tracks: [], durationSeconds: 0 });
     setLoadingAlbumId(album.id); setError(undefined);
     try { const detail = await api.album(album.id); if (request === selectionRequest.current) setSelected(detail); }
-    catch (e) { if (request === selectionRequest.current) setError((e as Error).message); }
+    catch (e) { if (request === selectionRequest.current) { setSelected(undefined); setError((e as Error).message); } }
     finally { if (request === selectionRequest.current) setLoadingAlbumId(undefined); }
   }
   async function runGuide(prompt: string) {

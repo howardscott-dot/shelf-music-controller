@@ -46,7 +46,7 @@ export function PlayingMedia({ album, playback, media, left, size, onClose }: { 
 
   return <article
     className={`expanded-album active-media-player ${media}-media-player ${moving ? 'is-playing' : 'is-paused'} ${rewinding ? 'is-rewinding' : ''}`}
-    style={{ left, width: size }}
+    style={{ '--shelf-left': `${left}px`, width: size } as CSSProperties}
     onClick={onClose}
     aria-label={`${album.title} by ${album.artist}. ${moving ? 'Playing' : 'Paused'} in the ${media === 'cd' ? 'CD' : 'cassette'} player. Tap to close.`}
   >
