@@ -9,6 +9,7 @@ import type { SpotifyClient } from './spotify.js';
 import type { PlexClient } from './plex.js';
 import type { FileLibrary } from './file-library.js';
 import type { AlbumDetail, AlbumSummary } from './types.js';
+import { MusicInfoService } from './music-info.js';
 
 type Source = 'jellyfin' | 'spotify' | 'plex' | 'files';
 type Library = Pick<JellyfinClient, 'albums' | 'album'> | Pick<SpotifyClient, 'albums' | 'album'> | Pick<PlexClient, 'albums' | 'album'> | Pick<FileLibrary, 'albums' | 'album'>;
@@ -109,14 +110,26 @@ function relatedTo(album: AlbumDetail, albums: AlbumSummary[]) {
 
 export async function featureRoutes(app: FastifyInstance, { directory, jellyfin, spotify, plex, files, playback }: { directory: string; jellyfin: JellyfinClient; spotify: SpotifyClient; plex: PlexClient; files: FileLibrary; playback: JellyfinPlayback }) {
   const store = new FeatureStore(directory);
+  const musicInfo = new MusicInfoService();
   const libraries: Record<Source, Library> = { jellyfin, spotify, plex, files };
   const library = (source: Source) => libraries[source];
   app.get('/guide', async (request) => { const { q, source } = z.object({ q: z.string().trim().min(2).max(300), source: sourceSchema }).parse(request.query); return guideAlbums(q, await allAlbums(source, libraries)); });
   app.get('/intelligence/:source/:id', async (request) => {
     const { source, id } = z.object({ source: sourceSchema, id: z.string().min(1).max(256) }).parse(request.params);
-    const album = await library(source).album(id); const history = await store.history(source, id);
-    const related = relatedTo(album, await allAlbums(source, libraries));
+    const [album, history, nearby] = await Promise.all([library(source).album(id), store.history(source, id), library(source).albums(0, source === 'spotify' ? 50 : 300)]);
+    const related = relatedTo(album, nearby.items);
     return { album, related, listening: { plays: history.length, lastPlayedAt: history[0]?.playedAt }, context: album.year ? `Released in ${album.year}. ${album.tracks.length} tracks with a running time of ${Math.round(album.durationSeconds / 60)} minutes.` : `${album.tracks.length} tracks with a running time of ${Math.round(album.durationSeconds / 60)} minutes.`, credits: [...new Set(album.tracks.flatMap((track) => track.artist.split(', ')))], linerNotes: 'No publisher-supplied liner notes are present in the connected metadata for this edition.', note: 'Credits and context are drawn from your connected music metadata; SHELF never invents missing information.' };
+  });
+  app.get('/intelligence/:source/:id/story', async (request) => {
+    const { source, id } = z.object({ source: sourceSchema, id: z.string().min(1).max(256) }).parse(request.params);
+    return { story: await musicInfo.albumStory(await library(source).album(id)) };
+  });
+  app.get('/intelligence/:source/:albumId/tracks/:trackId', async (request, reply) => {
+    const { source, albumId, trackId } = z.object({ source: sourceSchema, albumId: z.string().min(1).max(256), trackId: z.string().min(1).max(256) }).parse(request.params);
+    const album = await library(source).album(albumId); const track = album.tracks.find((item) => item.id === trackId);
+    if (!track) return reply.code(404).send({ error: 'Track not found on this album' });
+    const localLyrics = source === 'jellyfin' && typeof jellyfin.lyrics === 'function' ? await jellyfin.lyrics(track.id).catch(() => undefined) : undefined;
+    return musicInfo.trackInfo(track, localLyrics);
   });
   app.get('/crates', async () => ({ items: await store.crates() }));
   app.post('/crates', async (request) => ({ item: await store.createCrate(z.object({ name: z.string().trim().min(1).max(60) }).parse(request.body).name) }));

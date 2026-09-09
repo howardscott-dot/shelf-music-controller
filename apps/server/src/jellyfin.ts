@@ -3,6 +3,7 @@ import { cleanAlbumMetadata } from './metadata.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import sharp from 'sharp';
 import { musicBrainzFetch } from './musicbrainz.js';
+import type { LibraryLyrics } from './music-info.js';
 
 interface JellyfinItem {
   Id: string;
@@ -23,6 +24,8 @@ interface JellyfinUser { Id: string; Name: string }
 interface ArchiveImage { image: string; thumbnails?: Record<string, string>; types?: string[]; approved?: boolean; front?: boolean; back?: boolean }
 interface ArchiveMetadata { images?: ArchiveImage[] }
 interface ArtworkMatch { release?: string; releases?: string[]; group?: string }
+interface JellyfinLyricLine { Text?: string; text?: string; Start?: number; start?: number }
+interface JellyfinLyrics { Lyrics?: JellyfinLyricLine[]; lyrics?: JellyfinLyricLine[] }
 
 export class JellyfinClient {
   private resolvedUserId?: string;
@@ -99,6 +102,17 @@ export class JellyfinClient {
       spineUrl: `/api/spines/${encodeURIComponent(item.Id)}?v=4`, tracks: mapped,
       durationSeconds: mapped.reduce((sum, track) => sum + track.durationSeconds, 0)
     };
+  }
+
+  async lyrics(id: string): Promise<LibraryLyrics | undefined> {
+    const url = new URL(`Audio/${encodeURIComponent(id)}/Lyrics`, this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`);
+    const response = await fetch(url, { headers: { 'X-Emby-Token': this.apiKey }, signal: AbortSignal.timeout(6_000) });
+    if (response.status === 404) return;
+    if (!response.ok) throw new Error(`Jellyfin ${response.status}: ${await response.text()}`);
+    const value = await response.json() as JellyfinLyrics;
+    const lines = value.Lyrics ?? value.lyrics ?? [];
+    const plain = lines.map((line) => line.Text ?? line.text ?? '').filter(Boolean).join('\n').trim();
+    return plain ? { plain, sourceName: 'Jellyfin library' } : undefined;
   }
 
   imageUrl(id: string, width: number): URL {

@@ -13,6 +13,8 @@ export interface GuideResult { items: AlbumSummary[]; interpretation: string; sh
 export interface AlbumRef { source: Source; albumId: string; title: string; artist: string; artworkUrl?: string; addedAt: string }
 export interface Crate { id: string; name: string; createdAt: string; albums: AlbumRef[] }
 export interface AlbumIntelligence { album: AlbumDetail; related: AlbumSummary[]; listening: { plays: number; lastPlayedAt?: string }; context: string; credits: string[]; linerNotes: string; note: string }
+export interface SourcedStory { text: string; sourceName: string; sourceUrl: string }
+export interface TrackIntelligence { track: Track; story?: SourcedStory; lyrics?: { plain: string; sourceName: string; sourceUrl?: string }; note: string }
 export interface PlaybackState {
   transport: 'PLAYING' | 'PAUSED_PLAYBACK' | 'STOPPED' | 'TRANSITIONING' | 'UNKNOWN';
   title?: string; artist?: string; album?: string; artworkUrl?: string; durationSeconds: number; positionSeconds: number; volume: number; muted: boolean;

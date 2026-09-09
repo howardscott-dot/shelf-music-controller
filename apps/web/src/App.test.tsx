@@ -7,7 +7,7 @@ import { Shelf } from './components/Shelf';
 import type { AlbumDetail } from './types';
 
 const mock = vi.hoisted(() => ({
-  status: vi.fn(), albums: vi.fn(), album: vi.fn(), state: vi.fn(), playTrack: vi.fn(), control: vi.fn(), search: vi.fn(), devices: vi.fn(), device: vi.fn(), disconnect: vi.fn(), cassette: vi.fn(), crates: vi.fn(), guide: vi.fn(), intelligence: vi.fn(), createCrate: vi.fn(), deleteCrate: vi.fn(), addToCrate: vi.fn(), removeFromCrate: vi.fn(), recordPlay: vi.fn(), outputDevices: vi.fn(), discoverOutputs: vi.fn(), selectOutput: vi.fn(), manualOutput: vi.fn()
+  status: vi.fn(), albums: vi.fn(), album: vi.fn(), state: vi.fn(), playTrack: vi.fn(), control: vi.fn(), search: vi.fn(), devices: vi.fn(), device: vi.fn(), disconnect: vi.fn(), cassette: vi.fn(), crates: vi.fn(), guide: vi.fn(), intelligence: vi.fn(), albumStory: vi.fn(), trackIntelligence: vi.fn(), createCrate: vi.fn(), deleteCrate: vi.fn(), addToCrate: vi.fn(), removeFromCrate: vi.fn(), recordPlay: vi.fn(), outputDevices: vi.fn(), discoverOutputs: vi.fn(), selectOutput: vi.fn(), manualOutput: vi.fn()
 }));
 vi.mock('./cassette-art', () => ({ useCassetteArtwork: (album: unknown, enabled: boolean) => album && enabled ? mock.cassette(album) : undefined }));
 vi.mock('./api', () => ({
@@ -16,7 +16,7 @@ vi.mock('./api', () => ({
   spotifyApi: { status: mock.status, search: mock.search, devices: mock.devices, device: mock.device, disconnect: mock.disconnect }
   ,sourceApi: { status: mock.status }
   ,outputApi: { devices: mock.outputDevices, discover: mock.discoverOutputs, select: mock.selectOutput, manual: mock.manualOutput }
-  ,featureApi: { crates: mock.crates, guide: mock.guide, intelligence: mock.intelligence, createCrate: mock.createCrate, deleteCrate: mock.deleteCrate, addToCrate: mock.addToCrate, removeFromCrate: mock.removeFromCrate, recordPlay: mock.recordPlay }
+  ,featureApi: { crates: mock.crates, guide: mock.guide, intelligence: mock.intelligence, albumStory: mock.albumStory, trackIntelligence: mock.trackIntelligence, createCrate: mock.createCrate, deleteCrate: mock.deleteCrate, addToCrate: mock.addToCrate, removeFromCrate: mock.removeFromCrate, recordPlay: mock.recordPlay }
 }));
 
 const album: AlbumDetail = { id: 'a'.repeat(22), title: 'A Real Album', artist: 'An Artist', genres: [], source: 'spotify', artworkUrl: 'https://i.scdn.co/image/unaltered', backArtworkUrl: '', spineUrl: '', externalUrl: 'https://open.spotify.com/album/test', durationSeconds: 180, tracks: [{ id: 't'.repeat(22), title: 'Track one', artist: 'An Artist', album: 'A Real Album', index: 1, disc: 1, durationSeconds: 180 }] };
@@ -40,6 +40,7 @@ beforeEach(() => {
   mock.state.mockResolvedValue({ transport: 'STOPPED', positionSeconds: 0, durationSeconds: 0, volume: 50, muted: false });
   mock.playTrack.mockResolvedValue({ ok: true }); mock.control.mockResolvedValue({ ok: true });
   mock.crates.mockResolvedValue({ items: [] }); mock.recordPlay.mockResolvedValue({ ok: true });
+  mock.albumStory.mockResolvedValue({}); mock.trackIntelligence.mockResolvedValue({ track: album.tracks[0], note: 'Only sourced material.' });
   mock.devices.mockResolvedValue({ devices: [{ id: 'wiim', name: 'WiiM Pro', active: false, restricted: false }] });
   mock.device.mockResolvedValue({ ok: true });
   mock.discoverOutputs.mockResolvedValue({ devices: [{ id: 'wiim', name: 'WiiM Pro', address: '192.0.2.2', origin: 'configured', selected: true, protocol: 'UPnP / DLNA' }], selectedId: 'wiim' });
@@ -175,8 +176,18 @@ describe('guide, album intelligence and quiet shelf tools', () => {
   });
   it('opens grounded album intelligence without interrupting playback', async () => {
     mock.intelligence.mockResolvedValue({ album, related: [], listening: { plays: 2, lastPlayedAt: '2026-09-07T08:00:00.000Z' }, context: 'Released in 1996. 1 track.', credits: ['An Artist'], linerNotes: 'No publisher-supplied liner notes are present.', note: 'Metadata only.' });
-    await render(); await click(button('Spotify')); await click(container.querySelector('.spine')); await click(container.querySelector('[aria-label^="Open album intelligence"]'));
+    await render(); await click(button('Spotify')); await click(container.querySelector('.spine')); await click(container.querySelector('[aria-label="Open album and song information"]'));
     expect(container.textContent).toContain('ALBUM INTELLIGENCE'); expect(container.textContent).toContain('LINER NOTES'); expect(container.textContent).toContain('2 plays through SHELF'); expect(mock.control).not.toHaveBeenCalled();
+  });
+  it('keeps information in the footer and loads lyrics only for a chosen song', async () => {
+    mock.intelligence.mockResolvedValue({ album, related: [], listening: { plays: 0 }, context: 'One track.', credits: [], linerNotes: 'None.', note: 'Metadata only.' });
+    mock.trackIntelligence.mockResolvedValue({ track: album.tracks[0], lyrics: { plain: 'A line of lyrics', sourceName: 'Test library' }, note: 'Only sourced material.' });
+    await render(); await click(button('Spotify')); await click(container.querySelector('.spine'));
+    const info = container.querySelector('[aria-label="Open album and song information"]');
+    expect(info?.closest('.footer-tools')).toBeTruthy();
+    await click(info); await click(button('SONGS & LYRICS')); await click(button('Track one'));
+    expect(mock.trackIntelligence).toHaveBeenCalledWith('spotify', album.id, album.tracks[0].id);
+    expect(container.textContent).toContain('A line of lyrics');
   });
   it('keeps atmosphere local and exposes the LAN API behind one tools control', async () => {
     await render(); await click(button('Spotify')); await click(container.querySelector('[aria-label="Open crates, atmosphere and local API"]')); await click(button('ATMOSPHERE')); await click(button('MIDNIGHT'));

@@ -8,7 +8,7 @@ import { SourcePicker } from './components/SourcePicker';
 import { SpotifyPanel } from './components/SpotifyPanel';
 import { OutputPanel } from './components/OutputPanel';
 import { ToolsPanel, type Environment } from './components/ToolsPanel';
-import type { AlbumDetail, AlbumIntelligence as Intelligence, AlbumSummary, Crate, GuideResult, PlaybackState, Source, SourceStatus, SpineStyle, Track } from './types';
+import type { AlbumDetail, AlbumIntelligence as Intelligence, AlbumSummary, Crate, GuideResult, PlaybackState, Source, SourceStatus, SpineStyle, SourcedStory, Track, TrackIntelligence } from './types';
 import { readSpineStyle, saveSpineStyle } from './spine-style';
 
 export default function App() {
@@ -48,6 +48,15 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
   const [intelligenceOpen, setIntelligenceOpen] = useState(false);
   const [intelligence, setIntelligence] = useState<Intelligence>();
   const [intelligenceLoading, setIntelligenceLoading] = useState(false);
+  const [albumStory, setAlbumStory] = useState<SourcedStory>();
+  const [albumStoryLoading, setAlbumStoryLoading] = useState(false);
+  const [trackIntelligence, setTrackIntelligence] = useState<TrackIntelligence>();
+  const [trackIntelligenceLoading, setTrackIntelligenceLoading] = useState(false);
+  const lightMotion = useMemo(() => {
+    const appleTablet = /iPad/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const shorterSide = Math.min(window.screen.width, window.screen.height);
+    return (appleTablet && shorterSide <= 768) || (navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 2);
+  }, []);
   const [guideResult, setGuideResult] = useState<GuideResult>();
   const [crates, setCrates] = useState<Crate[]>([]);
   const [activeCrate, setActiveCrate] = useState<string>();
@@ -139,9 +148,21 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
     void featureApi.recordPlay(album, source).catch(() => undefined);
   }
   async function showIntelligence(album = selected) {
-    if (!album) return; setIntelligenceOpen(true); setIntelligence(undefined); setIntelligenceLoading(true);
-    try { setIntelligence(await featureApi.intelligence(source, album.id)); } catch (e) { setError((e as Error).message); setIntelligenceOpen(false); }
+    let target = album;
+    if (!target && state?.albumId) {
+      try { target = await api.album(state.albumId); } catch (e) { setError((e as Error).message); return; }
+    }
+    if (!target) return;
+    setIntelligenceOpen(true); setIntelligence(undefined); setAlbumStory(undefined); setTrackIntelligence(undefined); setIntelligenceLoading(true); setAlbumStoryLoading(true);
+    void featureApi.albumStory(source, target.id).then((value) => setAlbumStory(value.story)).catch(() => setAlbumStory(undefined)).finally(() => setAlbumStoryLoading(false));
+    try { setIntelligence(await featureApi.intelligence(source, target.id)); } catch (e) { setError((e as Error).message); setIntelligenceOpen(false); }
     finally { setIntelligenceLoading(false); }
+  }
+  async function showTrackIntelligence(track: Track) {
+    const albumId = intelligence?.album.id; if (!albumId) return;
+    setTrackIntelligence(undefined); setTrackIntelligenceLoading(true);
+    try { setTrackIntelligence(await featureApi.trackIntelligence(source, albumId, track.id)); } catch (e) { setError((e as Error).message); }
+    finally { setTrackIntelligenceLoading(false); }
   }
   async function chooseRelated(album: AlbumSummary) { await openAlbum(album); void showIntelligence({ ...album, tracks: [], durationSeconds: 0 }); }
   async function refreshCrates() { const value = await featureApi.crates(); setCrates(value.items); }
@@ -173,10 +194,10 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
     finally { controlLock.current = false; setBusy(false); }
   }
 
-  return <main className={`${selected || loadingAlbumId ? 'album-open' : ''} ${isSpotify ? 'spotify-library' : ''}`} data-environment={environment}>
+  return <main className={`${selected || loadingAlbumId ? 'album-open' : ''} ${isSpotify ? 'spotify-library' : ''} ${lightMotion ? 'light-motion' : ''}`} data-environment={environment}>
     {error && <div className="error" role="alert"><span>{error}</span><button onClick={() => setError(undefined)} aria-label="Dismiss error">×</button></div>}
     {!error && state?.queueWarning && <div className="error" role="status"><span>{state.queueWarning}</span></div>}
-    <Shelf key={`${source}:${catalogue?.query ?? query}:${start}`} albums={visible} selected={selected} playback={state} loadingId={loadingAlbumId} onSelect={openAlbum} onClose={closeAlbum} onPlay={play} spineStyle={spineStyle} />
+    <Shelf key={`${source}:${catalogue?.query ?? query}:${start}`} albums={visible} selected={selected} playback={state} loadingId={loadingAlbumId} onSelect={openAlbum} onClose={closeAlbum} onPlay={play} spineStyle={spineStyle} lightMotion={lightMotion} />
     {isSpotify && <nav className="spotify-library-bar" aria-label="Spotify collection navigation">
       <a href={selected?.externalUrl ?? 'https://open.spotify.com/collection/albums'} target="_blank" rel="noreferrer" className="spotify-attribution"><img src="/spotify-logo.svg" alt="Spotify" /><span>OPEN SPOTIFY ↗</span></a>
       <span className="collection-caption" title={selected ? `${selected.title} · ${selected.artist}` : undefined}>{selected ? `${selected.title} · ${selected.artist}` : catalogue ? `${catalogue.kind === 'guide' ? 'Guide' : 'Results'} for “${catalogue.query}”` : crate ? crate.name : 'Saved albums'}{total > 0 ? ` · ${start + 1}–${Math.min(start + size, total)} of ${total}` : ''}</span>
@@ -191,11 +212,10 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
       {isSpotify && <button onClick={() => setSearchOpen(true)}>SEARCH SPOTIFY</button>}
     </div>}
     {loading && <div className="library-loading" role="status">Loading your collection…</div>}
-    {selected && <button className="album-intelligence-trigger" onClick={() => void showIntelligence()} aria-label={`Open album intelligence for ${selected.title}`}>i<span>ALBUM</span></button>}
-    <NowPlaying state={state} source={source} selectionPending={isSpotify && Boolean(selected && selected.id !== state?.albumId)} busy={busy} onControl={control} onSearch={() => setSearchOpen(true)} onTools={() => setToolsOpen(true)} onOutputs={() => isSpotify ? setDevicesOpen(true) : setOutputsOpen(true)} onSources={onSources} filterActive={Boolean(query || activeCrate || catalogue)} spineStyle={spineStyle} onSpineStyle={onSpineStyle} />
+    <NowPlaying state={state} source={source} selectionPending={isSpotify && Boolean(selected && selected.id !== state?.albumId)} busy={busy} onControl={control} onInfo={() => void showIntelligence()} infoAvailable={Boolean(selected || state?.albumId)} onSearch={() => setSearchOpen(true)} onTools={() => setToolsOpen(true)} onOutputs={() => isSpotify ? setDevicesOpen(true) : setOutputsOpen(true)} onSources={onSources} filterActive={Boolean(query || activeCrate || catalogue)} spineStyle={spineStyle} onSpineStyle={onSpineStyle} />
     {searchOpen && <SearchPanel query={query} onChange={changeQuery} onClose={() => setSearchOpen(false)} onSearchCatalogue={isSpotify ? () => void searchCatalogue() : undefined} onGuide={(value) => void runGuide(value)} onClearResults={catalogue || activeCrate ? () => { setCatalogue(undefined); setActiveCrate(undefined); setGuideResult(undefined); setQuery(''); setPage(0); } : undefined} guideResult={guideResult} searching={searching} />}
     {toolsOpen && <ToolsPanel source={source} selected={selected} crates={crates} activeCrate={activeCrate} environment={environment} onEnvironment={setEnvironment} onClose={() => setToolsOpen(false)} onCreateCrate={(name) => void createCrate(name)} onDeleteCrate={(id) => void deleteCrate(id)} onToggleAlbum={(value) => void toggleCrateAlbum(value)} onChooseCrate={(id) => { setActiveCrate(id); setCatalogue(undefined); setQuery(''); setPage(0); setSelected(undefined); }} />}
-    {intelligenceOpen && <AlbumIntelligence data={intelligence} loading={intelligenceLoading} onClose={() => setIntelligenceOpen(false)} onSelect={(album) => void chooseRelated(album)} />}
+    {intelligenceOpen && <AlbumIntelligence data={intelligence} loading={intelligenceLoading} albumStory={albumStory} albumStoryLoading={albumStoryLoading} trackData={trackIntelligence} trackLoading={trackIntelligenceLoading} onTrack={(track) => void showTrackIntelligence(track)} onClose={() => setIntelligenceOpen(false)} onSelect={(album) => void chooseRelated(album)} />}
     {devicesOpen && <SpotifyPanel onClose={() => setDevicesOpen(false)} onDisconnect={onSources} />}
     {outputsOpen && <OutputPanel onClose={() => setOutputsOpen(false)} onChanged={() => { setState(undefined); setError(undefined); }} />}
   </main>;

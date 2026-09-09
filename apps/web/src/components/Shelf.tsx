@@ -5,7 +5,7 @@ import { CassetteCover, CassetteSpine } from './Cassette';
 import { useCassetteArtwork } from '../cassette-art';
 import { PlayingMedia } from './PlayingMedia';
 
-export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose, onPlay, spineStyle = 'cd' }: { albums: AlbumSummary[]; selected?: AlbumDetail; playback?: PlaybackState; loadingId?: string; onSelect: (album: AlbumSummary) => void; onClose: () => void; onPlay: (track: Track) => void; spineStyle?: SpineStyle }) {
+export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose, onPlay, spineStyle = 'cd', lightMotion = false }: { albums: AlbumSummary[]; selected?: AlbumDetail; playback?: PlaybackState; loadingId?: string; onSelect: (album: AlbumSummary) => void; onClose: () => void; onPlay: (track: Track) => void; spineStyle?: SpineStyle; lightMotion?: boolean }) {
   const pitch = spineStyle === 'tape' ? 64 : 44;
   const previousPitch = useRef(pitch);
   const ref = useRef<HTMLDivElement>(null);
@@ -33,10 +33,11 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
       const el = ref.current;
       if (!el) return;
       const logical = Math.max(0, el.scrollLeft - edgeInset - (selectedIndex >= 0 && el.scrollLeft > leftFor(selectedIndex) ? extra : 0));
-      const next = { start: Math.max(0, Math.floor(logical / pitch) - 4), end: Math.min(albums.length, Math.ceil((logical + el.clientWidth) / pitch) + 4) };
+      const overscan = lightMotion ? 1 : 4;
+      const next = { start: Math.max(0, Math.floor(logical / pitch) - overscan), end: Math.min(albums.length, Math.ceil((logical + el.clientWidth) / pitch) + overscan) };
       setRange((current) => current.start === next.start && current.end === next.end ? current : next);
     });
-  }, [albums.length, edgeInset, extra, leftFor, pitch, selectedIndex]);
+  }, [albums.length, edgeInset, extra, leftFor, lightMotion, pitch, selectedIndex]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (el && previousPitch.current !== pitch && selectedIndex < 0) el.scrollLeft = el.scrollLeft / previousPitch.current * pitch;
@@ -66,9 +67,9 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
   useEffect(() => {
     const el = ref.current;
     if (!el || selectedIndex < 0) return;
-    const frame = requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, leftFor(selectedIndex) - (el.clientWidth - openSize) / 2), behavior: 'smooth' }));
+    const frame = requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, leftFor(selectedIndex) - (el.clientWidth - openSize) / 2), behavior: lightMotion ? 'auto' : 'smooth' }));
     return () => cancelAnimationFrame(frame);
-  }, [leftFor, openSize, selected?.id, selectedIndex]);
+  }, [leftFor, lightMotion, openSize, selected?.id, selectedIndex]);
 
   return <section className={`shelf-wrap ${spineStyle === 'tape' ? 'tape-shelf' : ''}`} data-spine-style={spineStyle} aria-label={spineStyle === 'tape' ? 'Tape album shelf' : 'CD album shelf'}>
     <div className="shelf" ref={ref} onScroll={update}

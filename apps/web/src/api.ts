@@ -1,4 +1,4 @@
-import type { AlbumDetail, AlbumIntelligence, AlbumSummary, Crate, GuideResult, OutputDevices, PlaybackState, Source, SourceStatus, SpotifyStatus, SpotifyDevices } from './types';
+import type { AlbumDetail, AlbumIntelligence, AlbumSummary, Crate, GuideResult, OutputDevices, PlaybackState, Source, SourceStatus, SpotifyStatus, SpotifyDevices, SourcedStory, TrackIntelligence } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public retryAfter = 0) { super(message); }
@@ -61,6 +61,8 @@ export const outputApi = {
 export const featureApi = {
   guide: (query: string, source: Source) => request<GuideResult>(`/api/guide?q=${encodeURIComponent(query)}&source=${source}`),
   intelligence: (source: Source, id: string) => request<AlbumIntelligence>(`/api/intelligence/${source}/${encodeURIComponent(id)}`),
+  albumStory: (source: Source, id: string) => request<{ story?: SourcedStory }>(`/api/intelligence/${source}/${encodeURIComponent(id)}/story`),
+  trackIntelligence: (source: Source, albumId: string, trackId: string) => request<TrackIntelligence>(`/api/intelligence/${source}/${encodeURIComponent(albumId)}/tracks/${encodeURIComponent(trackId)}`),
   crates: () => request<{ items: Crate[] }>('/api/crates'),
   createCrate: (name: string) => request<{ item: Crate }>('/api/crates', { method: 'POST', body: JSON.stringify({ name }) }),
   deleteCrate: (id: string) => request<{ ok: boolean }>(`/api/crates/${encodeURIComponent(id)}`, { method: 'DELETE' }),
