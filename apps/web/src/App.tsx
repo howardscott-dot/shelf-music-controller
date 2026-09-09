@@ -171,9 +171,12 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
   async function toggleCrateAlbum(value: Crate) { if (!selected) return; try { const included = value.albums.some((album) => album.source === source && album.albumId === selected.id); if (included) await featureApi.removeFromCrate(value.id, source, selected.id); else await featureApi.addToCrate(value.id, selected, source); await refreshCrates(); } catch (e) { setError((e as Error).message); } }
   async function play(track: Track) {
     if (!selected || controlLock.current) return;
+    const album = selected;
+    const previousState = state;
     controlLock.current = true; setBusy(true); setError(undefined);
-    try { await startTrack(track, selected); setState(await api.state()); }
-    catch (e) { setError((e as Error).message); if (e instanceof ApiError && e.status === 409 && isSpotify) setDevicesOpen(true); else if (!isSpotify && (e as Error).message.includes('Choose a network player')) setOutputsOpen(true); }
+    setState({ ...state, transport: 'TRANSITIONING', trackId: track.id, albumId: album.id, title: track.title, artist: track.artist, album: album.title, artworkUrl: album.artworkUrl, durationSeconds: track.durationSeconds, positionSeconds: 0, volume: state?.volume ?? 0, muted: state?.muted ?? false });
+    try { await startTrack(track, album); setState(await api.state()); }
+    catch (e) { setState(previousState); setError((e as Error).message); if (e instanceof ApiError && e.status === 409 && isSpotify) setDevicesOpen(true); else if (!isSpotify && (e as Error).message.includes('Choose a network player')) setOutputsOpen(true); }
     finally { controlLock.current = false; setBusy(false); }
   }
   async function control(action: string, body?: object) {

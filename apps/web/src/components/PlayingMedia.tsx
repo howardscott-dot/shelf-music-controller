@@ -25,6 +25,7 @@ function chooseTapeSkin() {
 
 export function PlayingMedia({ album, playback, media, left, size, onClose }: { album: AlbumDetail; playback: PlaybackState; media: SpineStyle; left: number; size: number; onClose: () => void }) {
   const moving = playback.transport === 'PLAYING';
+  const starting = playback.transport === 'TRANSITIONING';
   const previous = useRef({ trackId: playback.trackId, position: playback.positionSeconds });
   const rewindTimer = useRef<number | undefined>(undefined);
   const [rewinding, setRewinding] = useState(false);
@@ -48,11 +49,11 @@ export function PlayingMedia({ album, playback, media, left, size, onClose }: { 
     className={`expanded-album active-media-player ${media}-media-player ${moving ? 'is-playing' : 'is-paused'} ${rewinding ? 'is-rewinding' : ''}`}
     style={{ '--shelf-left': `${left}px`, width: size } as CSSProperties}
     onClick={onClose}
-    aria-label={`${album.title} by ${album.artist}. ${moving ? 'Playing' : 'Paused'} in the ${media === 'cd' ? 'CD' : 'cassette'} player. Tap to close.`}
+    aria-label={`${album.title} by ${album.artist}. ${starting ? 'Starting' : moving ? 'Playing' : 'Paused'} in the ${media === 'cd' ? 'CD' : 'cassette'} player. Tap to close.`}
   >
     {visual}
     <div className="media-readout">
-      <span><i aria-hidden="true" />{moving ? 'PLAYING' : 'PAUSED'}</span>
+      <span><i aria-hidden="true" />{starting ? 'STARTING' : moving ? 'PLAYING' : 'PAUSED'}</span>
       <strong>{playback.title ?? album.title}</strong>
       <small>{album.artist}</small>
     </div>
@@ -65,7 +66,7 @@ function CdMechanism({ album, moving }: { album: AlbumDetail; moving: boolean })
     <span className="player-screw screw-a" /><span className="player-screw screw-b" /><span className="player-screw screw-c" /><span className="player-screw screw-d" />
     <div className="cd-disc-stage">
       <div className="cd-disc" style={{ animationPlayState: moving ? 'running' : 'paused' }}>
-        <img src={album.artworkUrl} alt="" draggable={false} />
+        <img src={album.artworkUrl} alt="" draggable={false} decoding="async" />
         <span className="cd-iridescence" />
         <span className="cd-hub"><i /></span>
       </div>

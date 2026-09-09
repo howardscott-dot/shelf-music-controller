@@ -77,6 +77,17 @@ describe('launch and source isolation', () => {
     await act(async () => finish(localAlbum));
     expect(container.querySelector('.cover-play')?.hasAttribute('disabled')).toBe(false);
   });
+  it('shows the physical player immediately while the network player starts', async () => {
+    const localAlbum = { ...album, source: 'jellyfin' as const };
+    let finish!: (value: { ok: boolean }) => void;
+    mock.albums.mockResolvedValueOnce({ items: [localAlbum], total: 1 });
+    mock.album.mockResolvedValueOnce(localAlbum);
+    mock.playTrack.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await render(); await click(button('Jellyfin')); await click(container.querySelector('.spine')); await click(container.querySelector('.cover-play'));
+    expect(container.querySelector('.active-media-player')).toBeTruthy();
+    expect(container.textContent).toContain('STARTING');
+    await act(async () => finish({ ok: true }));
+  });
   it('shows real setup instructions, not a fake Spotify collection, before connection', async () => {
     mock.status.mockResolvedValue({ jellyfin: { configured: true }, spotify: { configured: false, connected: false }, plex: { configured: false }, files: { configured: false } });
     await render(); await click(button('Spotify'));

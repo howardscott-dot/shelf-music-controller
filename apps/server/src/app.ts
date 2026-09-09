@@ -16,6 +16,13 @@ import { OutputManager, outputRoutes } from './outputs.js';
 import { PlexClient, plexRoutes } from './plex.js';
 import { FileLibrary, fileLibraryRoutes } from './file-library.js';
 
+export function staticCacheControl(pathName: string) {
+  if (pathName.endsWith('index.html')) return 'private, no-cache, max-age=0, must-revalidate';
+  if (pathName.endsWith('version.json')) return 'no-store';
+  if (pathName.includes('/assets/')) return 'public, max-age=31536000, immutable';
+  if (pathName.endsWith('manifest.webmanifest') || pathName.endsWith('apple-touch-icon.png') || /icon-\d+\.png$/.test(pathName)) return 'no-cache';
+}
+
 export function buildApp(config: Config) {
   const app = Fastify({ logger: { level: config.LOG_LEVEL, serializers: { req: (request) => ({ method: request.method, url: request.url?.split('?')[0], hostname: request.hostname }) } } });
   const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));
@@ -70,20 +77,25 @@ export function buildApp(config: Config) {
       reply.header('X-Shelf-Spine-Source', 'cover-art-archive');
       return reply.send(physicalSpine);
     }
-    // A square cover is cropped into a very tall spine in the browser. Supplying
-    // a large source keeps that narrow crop crisp on Retina/iPad displays.
-    const upstream = await jellyfin.image(id, 1000);
-    if (!upstream.ok) return reply.code(upstream.status).send({ error: 'Spine source unavailable' });
-    reply.header('Content-Type', upstream.headers.get('content-type') ?? 'image/jpeg');
+    // Decode a narrow image on the client, not a full square cover for every
+    // 42px spine. This cuts iPad image memory by roughly an order of magnitude.
+    const fallback = await jellyfin.fallbackSpine(id);
+    reply.header('Content-Type', 'image/jpeg');
     reply.header('Cache-Control', 'public, max-age=604800, stale-while-revalidate=2592000');
-    return reply.send(Buffer.from(await upstream.arrayBuffer()));
+    return reply.send(fallback);
   });
 
   if (existsSync(webRoot)) {
-    app.register(fastifyStatic, { root: webRoot, prefix: '/', cacheControl: true, maxAge: '1h' });
+    app.register(fastifyStatic, {
+      root: webRoot, prefix: '/', cacheControl: true, maxAge: '1h',
+      setHeaders: (response, pathName) => {
+        const cacheControl = staticCacheControl(pathName);
+        if (cacheControl) response.header('Cache-Control', cacheControl);
+      }
+    });
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith('/api/')) return reply.code(404).send({ error: 'Not found' });
-      reply.header('Cache-Control', 'no-cache');
+      reply.header('Cache-Control', 'private, no-cache, max-age=0, must-revalidate');
       return reply.sendFile('index.html');
     });
   }

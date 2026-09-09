@@ -5,6 +5,7 @@ html, body, #root { margin: 0; min-width: 320px; height: 100%; overflow: hidden;
 html { -webkit-text-size-adjust: 100%; } body { -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; }
 button, input { font: inherit; }
 button { color: inherit; }
+.app-update-notice { position: fixed; z-index: 200; inset: 0; display: grid; place-items: center; background: #050605f5; color: #d9bf8b; font: 500 12px DM Mono, monospace; letter-spacing: .18em; }
 main { height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) 102px; background: #030303; }
 header { display: flex; align-items: center; gap: 22px; padding: 0 3.5vw; border-bottom: 1px solid #ffffff0e; }
 .wordmark { font-size: 20px; font-weight: 600; letter-spacing: .35em; }.wordmark span { color: #b99a5e; font-size: 6px; vertical-align: top; margin-left: 2px; }
@@ -15,7 +16,7 @@ header p, .status, .shelf-label, .eyebrow { font: 400 10px DM Mono, monospace; l
 .shelf-label { position: absolute; z-index: 2; top: clamp(14px, 2.5vh, 28px); left: 3.5vw; right: 3.5vw; display: flex; justify-content: space-between; padding: 0; }
 .shelf { flex: 1 1 auto; width: 100%; max-width: 100%; min-width: 0; min-height: 250px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; cursor: grab; touch-action: pan-x; -webkit-overflow-scrolling: touch; background: linear-gradient(180deg, #020202, #070807 84%, #14110c); box-shadow: inset 0 7px 16px #000, inset 0 -10px 20px #b9873322; }
 .shelf.dragging { cursor: grabbing; }
-.shelf::-webkit-scrollbar { display: none; }.shelf-track { height: 100%; min-width: 100%; position: relative; display: block; border-bottom: 8px solid #15120d; box-shadow: inset 0 -1px #6f532b99, inset 0 -7px 14px #d9a24b20; }
+.shelf::-webkit-scrollbar { display: none; }.shelf-track { height: 100%; min-width: 100%; position: relative; display: block; border-bottom: 8px solid #15120d; background: repeating-linear-gradient(90deg, #121310 0 39px, #34332e 40px, #090a09 41px 44px); box-shadow: inset 0 -1px #6f532b99, inset 0 -7px 14px #d9a24b20; }
 .spine { position: absolute; left: 0; top: 6px; bottom: 3px; width: 42px; padding: 12px 5px; border: 0; border-left: 1px solid #eee8da45; border-right: 1px solid #050505e8; border-radius: 2px 2px 0 0; background-color: hsl(var(--hue) 20% 22%); background-size: auto 100%; background-position: center; background-repeat: no-repeat; cursor: pointer; overflow: hidden; image-rendering: auto; box-shadow: inset 2px 0 2px #fff2, inset -3px 0 3px #000a, 1px 0 #000, 2px 0 3px #000c; contain: layout style; }
 .spine::before { content: ''; position: absolute; inset: 2px 1px 1px; border-left: 1px solid #fff4; border-right: 1px solid #000b; border-top: 1px solid #ffffff30; pointer-events: none; z-index: 1; }
 .spine::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #0007 0, transparent 5px, transparent calc(100% - 6px), #0008 100%), linear-gradient(0deg, #000b 0 7px, transparent 18px, transparent calc(100% - 12px), #ffffff1f calc(100% - 4px), #0008 100%); pointer-events: none; }
@@ -99,6 +100,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid #d9bf8b; outline-offs
 
 /* Text inserts are the fallback; verified cassette scans replace them when present. */
 .tape-shelf { --closed-spine-width: 62px; }
+.tape-shelf .shelf-track { background: repeating-linear-gradient(90deg, #151613 0 58px, #4a4840 59px, #090a09 61px 64px); }
 .tape-shelf .tape-spine { width: 62px; margin-left: 0; top: 6px; bottom: 3px; border-radius: 4px 4px 2px 2px; border-left-color: #cdd1cc70; border-right-color: #000; background-color: #171a18; box-shadow: inset 3px 0 2px #f1f5ed24, inset -4px 0 4px #000b, 1px 0 #000, 2px 0 4px #000d; --tape-paper: #d8d4c7; --tape-ink: #20221f; --tape-accent: #786146; }
 .tape-shelf .tape-spine::before { inset: 4px 2px; border-radius: 3px; border-top: 2px solid #cdd1c855; border-bottom: 2px solid #cdd1c838; }
 .tape-shelf .tape-spine::after { background: linear-gradient(90deg, #0006, transparent 5px, transparent calc(100% - 6px), #0009), linear-gradient(0deg, #000b, transparent 12px, transparent calc(100% - 12px), #fff2); }
@@ -253,12 +255,13 @@ main[data-environment] .shelf { background: linear-gradient(180deg, color-mix(in
 
 /* iPad Air 2 and similarly constrained devices keep the artwork but use a
  * smaller compositing budget. This avoids dozens of permanent GPU layers. */
-.light-motion .spine, .light-motion .expanded-album { transition-duration: 260ms, 100ms; will-change: auto; }
-.light-motion .expanded-album { animation-duration: 180ms; }
+.light-motion .spine { left: var(--shelf-left, 0px); transform: none; transition: filter 100ms ease; will-change: auto; }
+.light-motion .spine:hover, .light-motion .spine:focus-visible, .light-motion .spine.selected, .light-motion .spine:active { transform: none; }
+.light-motion .expanded-album { left: var(--shelf-left, 0px); transform: none; transition: none; will-change: auto; animation-duration: 180ms; }
 .light-motion .cd-disc { animation-duration: 34s; box-shadow: 0 10px 22px #000c, 0 0 0 2px #ffffff3b, inset 0 0 12px #fff5; }
 .light-motion .cd-disc > img, .light-motion .cassette-skin { filter: none; }
 .light-motion .cd-laser-line { animation: none; top: 49%; opacity: .42; }
-.light-motion .cd-player-shell, .light-motion .cassette-player-shell, .light-motion .player-close, .light-motion .media-readout, .light-motion .cover-play, .light-motion .cover-flip, .light-motion .intelligence-drawer, .light-motion .tools-drawer, .light-motion .drawer-heading, .light-motion .drawer-tabs, .light-motion .intelligence-tabs { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.light-motion .cd-player-shell, .light-motion .cassette-player-shell, .light-motion .cd-hub, .light-motion .player-close, .light-motion .media-readout, .light-motion .cover-play, .light-motion .cover-flip, .light-motion .intelligence-drawer, .light-motion .tools-drawer, .light-motion .drawer-heading, .light-motion .drawer-tabs, .light-motion .intelligence-tabs { backdrop-filter: none; -webkit-backdrop-filter: none; }
 .light-motion main[data-environment] .shelf, main.light-motion[data-environment] .shelf { transition: none; }
 .light-motion .player-glass-shine, .light-motion .cassette-reflection { display: none; }
 .is-paused .cd-disc { will-change: auto; }

@@ -32,6 +32,7 @@ export class JellyfinClient {
   private readonly artworkMatches = new Map<string, Promise<ArtworkMatch | undefined>>();
   private readonly archiveMatches = new Map<string, Promise<ArchiveMetadata | undefined>>();
   private readonly pendingSpines = new Map<string, Promise<void>>();
+  private readonly fallbackSpines = new Map<string, Promise<Buffer>>();
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
@@ -70,9 +71,9 @@ export class JellyfinClient {
         const display = cleanAlbumMetadata(item.AlbumArtist ?? item.Artists?.[0] ?? 'Unknown artist', item.Name);
         return {
           id: item.Id, title: display.title, artist: display.artist,
-          year: item.ProductionYear, genres: item.Genres ?? [], artworkUrl: this.artworkPath(item.Id, 720),
+          year: item.ProductionYear, genres: item.Genres ?? [], artworkUrl: this.artworkPath(item.Id, 900),
           backArtworkUrl: `/api/artwork/${encodeURIComponent(item.Id)}?side=back&width=1200`,
-          spineUrl: `/api/spines/${encodeURIComponent(item.Id)}?v=4`
+          spineUrl: `/api/spines/${encodeURIComponent(item.Id)}?v=5`
         };
       }),
       total: data.TotalRecordCount ?? 0
@@ -99,7 +100,7 @@ export class JellyfinClient {
       id: item.Id, title: display.title, artist: display.artist,
       year: item.ProductionYear, genres: item.Genres ?? [], artworkUrl: this.artworkPath(item.Id, 900),
       backArtworkUrl: `/api/artwork/${encodeURIComponent(item.Id)}?side=back&width=1200`,
-      spineUrl: `/api/spines/${encodeURIComponent(item.Id)}?v=4`, tracks: mapped,
+      spineUrl: `/api/spines/${encodeURIComponent(item.Id)}?v=5`, tracks: mapped,
       durationSeconds: mapped.reduce((sum, track) => sum + track.durationSeconds, 0)
     };
   }
@@ -246,6 +247,26 @@ export class JellyfinClient {
       this.pendingSpines.set(id, pending);
     }
     return undefined;
+  }
+
+  async fallbackSpine(id: string): Promise<Buffer> {
+    const cacheDirectory = new URL('../../../.cache/spines-fallback-v1/', import.meta.url);
+    const cacheFile = new URL(`${encodeURIComponent(id)}.jpg`, cacheDirectory);
+    try { return await readFile(cacheFile); } catch { /* Generate it below. */ }
+    const existing = this.fallbackSpines.get(id);
+    if (existing) return existing;
+    const pending = (async () => {
+      const response = await this.image(id, 1000);
+      if (!response.ok) throw new Error(`Spine source unavailable (${response.status})`);
+      const result = await sharp(Buffer.from(await response.arrayBuffer()))
+        .resize(110, 1000, { fit: 'cover', position: 'centre' })
+        .sharpen({ sigma: 0.45 }).jpeg({ quality: 88, chromaSubsampling: '4:4:4' }).toBuffer();
+      await mkdir(cacheDirectory, { recursive: true });
+      await writeFile(cacheFile, result);
+      return result;
+    })().finally(() => this.fallbackSpines.delete(id));
+    this.fallbackSpines.set(id, pending);
+    return pending;
   }
 
   streamUrl(trackId: string): string {

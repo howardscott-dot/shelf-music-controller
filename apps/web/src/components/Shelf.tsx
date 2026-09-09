@@ -11,8 +11,9 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
   const ref = useRef<HTMLDivElement>(null);
   const moved = useRef(false);
   const rangeFrame = useRef<number | undefined>(undefined);
+  const previousScrollLeft = useRef(0);
   const drag = useRef({ active: false, x: 0, y: 0, scrollLeft: 0 });
-  const [range, setRange] = useState({ start: 0, end: 40 });
+  const [range, setRange] = useState({ start: 0, end: 60 });
   const [openSize, setOpenSize] = useState(390);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [flippedAlbumId, setFlippedAlbumId] = useState<string>();
@@ -33,9 +34,23 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
       const el = ref.current;
       if (!el) return;
       const logical = Math.max(0, el.scrollLeft - edgeInset - (selectedIndex >= 0 && el.scrollLeft > leftFor(selectedIndex) ? extra : 0));
-      const overscan = lightMotion ? 1 : 4;
-      const next = { start: Math.max(0, Math.floor(logical / pitch) - overscan), end: Math.min(albums.length, Math.ceil((logical + el.clientWidth) / pitch) + overscan) };
-      setRange((current) => current.start === next.start && current.end === next.end ? current : next);
+      const visibleStart = Math.max(0, Math.floor(logical / pitch));
+      const visibleEnd = Math.min(albums.length, Math.ceil((logical + el.clientWidth) / pitch));
+      const viewportItems = Math.max(1, Math.ceil(el.clientWidth / pitch));
+      const movingRight = el.scrollLeft >= previousScrollLeft.current;
+      previousScrollLeft.current = el.scrollLeft;
+      // iOS performs momentum scrolling on a separate compositor thread. Keep
+      // roughly a viewport of real spines ready in the direction of travel and
+      // move the React window only as it approaches the buffered edge.
+      const nearBuffer = Math.ceil(viewportItems * (movingRight ? .75 : 3));
+      const farBuffer = Math.ceil(viewportItems * (movingRight ? 3 : .75));
+      const guard = Math.max(4, Math.ceil(viewportItems * .65));
+      const next = { start: Math.max(0, visibleStart - nearBuffer), end: Math.min(albums.length, visibleEnd + farBuffer) };
+      setRange((current) => {
+        const safelyCovered = (current.start === 0 || visibleStart >= current.start + guard) && (current.end === albums.length || visibleEnd <= current.end - guard);
+        if (safelyCovered || (current.start === next.start && current.end === next.end)) return current;
+        return next;
+      });
     });
   }, [albums.length, edgeInset, extra, leftFor, lightMotion, pitch, selectedIndex]);
   useLayoutEffect(() => {
@@ -67,7 +82,7 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
   useEffect(() => {
     const el = ref.current;
     if (!el || selectedIndex < 0) return;
-    const frame = requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, leftFor(selectedIndex) - (el.clientWidth - openSize) / 2), behavior: lightMotion ? 'auto' : 'smooth' }));
+    const frame = requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, leftFor(selectedIndex) - (el.clientWidth - openSize) / 2), behavior: 'smooth' }));
     return () => cancelAnimationFrame(frame);
   }, [leftFor, lightMotion, openSize, selected?.id, selectedIndex]);
 
@@ -84,7 +99,7 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
             if (selectedIsActive && playback) return <PlayingMedia key={`playing-${spineStyle}-${album.id}`} album={selected} playback={playback} media={spineStyle} left={leftFor(index)} size={openSize} onClose={() => { if (!moved.current) onClose(); }} />;
             if (spineStyle === 'tape' && cassetteArtwork?.status === 'found' && cassetteArtwork.frontUrl) return <CassetteCover key={`cassette-${album.id}`} album={selected} artwork={cassetteArtwork} left={leftFor(index)} size={openSize} onClose={() => { if (!moved.current) onClose(); }} onPlay={onPlay} />;
             if (album.source === 'spotify') return <button key={album.id} className="expanded-album spotify-album" style={{ '--shelf-left': `${leftFor(index)}px`, width: openSize } as CSSProperties} onClick={() => { if (!moved.current) onClose(); }} aria-label={`${selected.title} by ${selected.artist}. Close album cover.`}>
-              {selected.artworkUrl ? <img src={selected.artworkUrl} alt={`${selected.title} cover`} draggable={false} /> : <span>{selected.title}<br />{selected.artist}</span>}
+              {selected.artworkUrl ? <img src={selected.artworkUrl} alt={`${selected.title} cover`} draggable={false} decoding="async" fetchPriority="high" /> : <span>{selected.title}<br />{selected.artist}</span>}
             </button>;
             const flipped = flippedAlbumId === selected.id;
             const backReady = Boolean(selected.backArtworkUrl) && backReadyFor === selected.id;
@@ -92,7 +107,7 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
             const shouldLoadBack = backReady || loadBackFor === selected.id;
             return <article key={album.id} className={`expanded-album ${flipped ? 'flipped' : ''}`} style={{ '--shelf-left': `${leftFor(index)}px`, width: openSize } as CSSProperties} onClick={() => { if (!moved.current) onClose(); }} aria-label={`${selected.title} by ${selected.artist}. Tap to close.`}>
             <div className="cover-card">
-              <div className="cover-face cover-front"><img src={versionedArtwork(selected.artworkUrl, 5)} alt={`${selected.title} front cover`} draggable={false} /></div>
+              <div className="cover-face cover-front"><img src={versionedArtwork(selected.artworkUrl, 5)} alt={`${selected.title} front cover`} draggable={false} decoding="async" fetchPriority="high" /></div>
               <div className="cover-face cover-back">{shouldLoadBack && !backUnavailable && <img src={versionedArtwork(selected.backArtworkUrl, 7)} alt={`${selected.title} back cover`} draggable={false} ref={(image) => { if (image?.complete && image.naturalWidth > 0 && backReadyFor !== selected.id) setBackReadyFor(selected.id); }} onLoad={() => { setBackReadyFor(selected.id); setBackUnavailableFor((id) => id === selected.id ? undefined : id); }} onError={() => { setBackReadyFor(undefined); setBackUnavailableFor(selected.id); setFlippedAlbumId(undefined); }} />}</div>
             </div>
             <button className={`cover-flip ${!backReady && !backUnavailable ? 'loading' : ''} ${backUnavailable ? 'unavailable' : ''}`} disabled={!backReady} aria-label={flipped ? `Show the front cover of ${selected.title}` : backUnavailable ? `Back cover unavailable for ${selected.title}` : `Show the back cover of ${selected.title}`} title={flipped ? 'Front cover' : backUnavailable ? 'No genuine back-cover scan found' : backReady ? 'Back cover' : 'Finding back cover'} onClick={(event) => { event.stopPropagation(); setFlippedAlbumId(flipped ? undefined : selected.id); }}>↻</button>
@@ -100,7 +115,7 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
           </article>;
           }
           if (spineStyle === 'tape') return <CassetteSpine key={album.id} album={album} left={leftFor(index)} loading={loadingId === album.id} onSelect={() => { if (!moved.current) onSelect(album); }} />;
-          return <button key={album.id} className={`spine ${album.source === 'spotify' ? 'spotify-spine' : ''} ${loadingId === album.id ? 'loading' : ''}`} style={{ '--shelf-left': `${leftFor(index)}px`, '--hue': hashHue(album.id), backgroundImage: album.source === 'spotify' ? undefined : `linear-gradient(90deg, rgba(0,0,0,.2), rgba(255,255,255,.08), rgba(0,0,0,.38)), url(${album.spineUrl})` } as CSSProperties} onClick={() => { if (!moved.current) onSelect(album); }} title={`${album.artist} — ${album.title}`} aria-label={`${album.artist} — ${album.title}`}>
+          return <button key={album.id} className={`spine ${album.source === 'spotify' ? 'spotify-spine' : ''} ${loadingId === album.id ? 'loading' : ''}`} style={{ '--shelf-left': `${leftFor(index)}px`, '--hue': hashHue(album.id), backgroundImage: album.source === 'spotify' ? undefined : `linear-gradient(90deg, rgba(0,0,0,.2), rgba(255,255,255,.08), rgba(0,0,0,.38)), url(${album.spineUrl})` } as CSSProperties} onPointerDown={() => { if (album.artworkUrl) { const image = new Image(); image.src = album.source === 'spotify' ? album.artworkUrl : versionedArtwork(album.artworkUrl, 5); } }} onClick={() => { if (!moved.current) onSelect(album); }} title={`${album.artist} — ${album.title}`} aria-label={`${album.artist} — ${album.title}`}>
             <span className="spine-title">{album.title}</span><span className="spine-artist">{album.artist}</span>
           </button>;
         })}
