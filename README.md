@@ -144,6 +144,10 @@ References: [Spotify Web API](https://developer.spotify.com/documentation/web-ap
 - Jellyfin's generated API defines user-scoped `Items` queries and original/download media endpoints: https://github.com/jellyfin/jellyfin-sdk-typescript
 - Jellyfin documents HTTP streaming and local-network addressing: https://jellyfin.org/docs/general/post-install/networking/
 - UPnP defines standard MediaRenderer, AVTransport and RenderingControl services: https://upnp.org/specs/av/UPnP-av-MediaRenderer-v1-Device.pdf
+- Naim documents control from third-party UPnP control points: https://www.naimaudio.com/help/upnp-and-local-playback-operation-compatibility-and-control
+- Cambridge Audio describes its network streamers as UPnP renderers: https://www.cambridgeaudio.com/eur/en/faqs/upnp-guide-and-troubleshooting
+- Denon documents compatible units acting as DLNA Digital Media Renderers: https://manuals.denon.com/rcdn9/eu/en/OKNRSYhidqmtab.php
+- Yamaha documents enabling control from a DLNA Digital Media Controller: https://manual.yamaha.com/av/18/rxv685/en-US/319085835.html
 - Plex documents its JSON media-server API and authentication headers: https://developer.plex.tv/pms/
 - MusicBrainz's Cover Art Archive provides curated release artwork and 250/500/1200px variants: https://musicbrainz.org/doc/Cover_Art_Archive/API
 
