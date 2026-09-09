@@ -9,6 +9,7 @@ import { z } from 'zod';
 
 const audioExtensions = new Set(['.aac', '.aif', '.aiff', '.alac', '.ape', '.dff', '.dsf', '.flac', '.m4a', '.mp3', '.mpc', '.oga', '.ogg', '.opus', '.wav', '.wma']);
 const imageNames = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'folder.jpeg', 'folder.png', 'front.jpg', 'front.jpeg', 'front.png'];
+const scanFreshnessMs = 60 * 60_000;
 const hash = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 32);
 
 interface LocalTrack extends Track { file: string }
@@ -41,7 +42,7 @@ export class FileLibrary {
   }
   private async ensure(force = false) {
     this.requireConfig();
-    if (!force && this.scannedAt && Date.now() - this.scannedAt < 5 * 60_000) return;
+    if (!force && this.scannedAt && Date.now() - this.scannedAt < scanFreshnessMs) return;
     if (this.scanning) return this.scanning;
     this.scanning = this.scan().finally(() => { this.scanning = undefined; });
     return this.scanning;
@@ -54,7 +55,10 @@ export class FileLibrary {
     for (let offset = 0; offset < files.length; offset += 8) {
       const batch = files.slice(offset, offset + 8);
       const parsed = await Promise.all(batch.map(async (file) => {
-        try { return { file, metadata: await parseFile(file, { duration: true, skipCovers: true }) }; }
+        // Reading tags is enough to build the shelf. Asking music-metadata to
+        // calculate exact durations can force a full read of thousands of files
+        // on a NAS and makes the first opening feel stalled.
+        try { return { file, metadata: await parseFile(file, { duration: false, skipCovers: true }) }; }
         catch { return undefined; }
       }));
       for (const item of parsed) {
