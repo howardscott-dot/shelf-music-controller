@@ -86,6 +86,25 @@ export class JellyfinPlayback {
     });
   }
 
+  /** Reattach SHELF's queue after a service update without restarting or
+   * seeking the track already playing on the renderer. */
+  async adopt(albumId: string, trackId: string, library: Library = this.library, artworkUri?: string) {
+    return this.exclusive(async () => {
+      const album = await library.album(albumId);
+      const requestedIndex = album.tracks.findIndex((track) => track.id === trackId);
+      if (requestedIndex < 0) throw new Error('Track does not belong to album');
+      const state = await this.wiim.transportState();
+      const queue: Queue = { album, index: requestedIndex, startingUntil: 0, library, artworkUri, lastTransport: state.transport, lastPosition: state.positionSeconds, lastDuration: state.durationSeconds || album.tracks[requestedIndex]?.durationSeconds };
+      const actualIndex = this.indexFor(queue, state.trackUri);
+      if (actualIndex !== requestedIndex) throw new Error('Network player is no longer playing that track');
+      queue.index = actualIndex;
+      this.queue = queue;
+      if (state.transport === 'PLAYING' || state.transport === 'PAUSED_PLAYBACK') await this.prepare(queue);
+      this.warning = undefined;
+      this.schedule();
+    });
+  }
+
   async release() {
     return this.exclusive(async () => { this.queue = undefined; clearTimeout(this.timer); this.warning = undefined; });
   }
@@ -194,6 +213,11 @@ export async function jellyfinPlaybackRoutes(app: FastifyInstance, { playback }:
     const trackId = id.parse((request.params as { id: string }).id);
     const { albumId } = z.object({ albumId: id }).parse(request.body);
     await playback.start(albumId, trackId); return { ok: true };
+  });
+  app.post('/playback/adopt/:id', async (request) => {
+    const trackId = id.parse((request.params as { id: string }).id);
+    const { albumId } = z.object({ albumId: id }).parse(request.body);
+    await playback.adopt(albumId, trackId); return { ok: true };
   });
   app.post('/playback/:action', async (request) => {
     const action = z.enum(['play', 'pause', 'stop', 'seek', 'volume', 'mute', 'next', 'previous']).parse((request.params as { action: string }).action);

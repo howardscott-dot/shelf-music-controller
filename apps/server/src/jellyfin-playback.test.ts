@@ -57,6 +57,13 @@ describe('continuous Jellyfin album playback', () => {
     expect(current.trackUri).toBe(url(album.tracks[1]!.id)); expect(next).toBe(url(album.tracks[2]!.id));
     expect(await playback.state()).toMatchObject({ trackId: album.tracks[1]!.id, albumId: album.id, queueIndex: 1, queueLength: 3 });
   });
+  it('reattaches a queue after a service update without restarting the current track', async () => {
+    current = { transport: 'PLAYING', trackUri: url(album.tracks[1]!.id), positionSeconds: 63, durationSeconds: 180 };
+    await playback.adopt(album.id, album.tracks[1]!.id);
+    expect(wiim.setUri).not.toHaveBeenCalled(); expect(wiim.play).not.toHaveBeenCalled();
+    expect(next).toBe(url(album.tracks[2]!.id));
+    expect(await playback.state()).toMatchObject({ trackId: album.tracks[1]!.id, queueIndex: 1, queueLength: 3, positionSeconds: 63 });
+  });
   it('clears a stale next URI for a single-track album or final-track selection', async () => {
     next = 'http://old-album/track';
     await playback.start(album.id, album.tracks[2]!.id);
