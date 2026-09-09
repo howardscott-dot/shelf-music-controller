@@ -1,10 +1,33 @@
 # SHELF
 
-**A touch-first, self-hosted music controller for browsing albums as CDs and cassettes, with Jellyfin, Plex, Spotify, music-folder and network-player support.**
+**A touch-first, self-hosted album browser and music remote for Jellyfin, Plex, Spotify, NAS folders and UPnP/DLNA streamers.**
 
-SHELF is a platform-independent web controller for Jellyfin, Plex, mounted music folders and, optionally, Spotify Premium. Choose a collection when you launch the app; the footer's **Source** button returns to the chooser without stopping music. Apple Music is visibly reserved as **Coming soon**, not an implemented integration. Local music travels to a user-selected network player rather than through the browser; Spotify continues to use Spotify Connect's own device picker.
+SHELF turns a personal music collection into a tactile, full-screen shelf of readable CD or cassette spines. It runs on an always-on home server, works especially well on a tablet, and sends music directly to a chosen network player rather than routing audio through the browser.
+
+Choose Jellyfin, Plex, Spotify Premium or a mounted music folder when SHELF opens. The footer's **Source** button returns to the chooser without stopping music. Apple Music is visibly reserved as **Coming soon**, not presented as an implemented integration.
 
 SHELF is an independent open-source project. It is not affiliated with or endorsed by any music-service, hardware or artwork provider. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for service, artwork, font and trademark information.
+
+## Connections at a glance
+
+| Music source | What SHELF browses | How it reaches the stereo |
+| --- | --- | --- |
+| Jellyfin | Albums, tracks and available packaging artwork | Direct media URL sent to the selected UPnP/DLNA player |
+| Plex | A Plex music library and its cover artwork | Authenticated Plex media URL sent to the selected player |
+| Music files | Tagged audio in one mounted local or NAS music folder | SHELF's range-enabled LAN stream sent to the selected player |
+| Spotify Premium | Saved albums and explicit catalogue searches | Spotify Connect on the chosen Spotify device |
+
+Compatible local outputs are discovered from their real UPnP device descriptions. This includes many renderers and receivers from WiiM, Naim, Cambridge Audio, Denon/Marantz, Yamaha/MusicCast, Linn, Sony, Pioneer/Onkyo and other standards-compatible manufacturers. Support depends on the services exposed by each model and firmware.
+
+## Highlights
+
+- Touch-first horizontal browsing with readable CD and cassette spines.
+- Full-height album covers, an animated transparent CD player and a photographic cassette transport.
+- Persistent album playback with next, previous, play/pause, seek, volume and random controls.
+- Natural-language Music Guide, touch keyboard search, Album Intelligence and small personal crates.
+- Real front artwork from the connected library, plus genuine archived backs and cassette packaging when available.
+- A local control API for Home Assistant, Apple Shortcuts and trusted LAN agents.
+- Four restrained colour atmospheres that leave the shelf itself unchanged.
 
 ## The interface
 
@@ -24,9 +47,9 @@ SHELF is an independent open-source project. It is not affiliated with or endors
 
 ![SHELF's source and appearance chooser](docs/screenshots/01-source-picker.jpg)
 
-Choose **CD spines** or **Tapes** on the launch screen, or use the **CDs/Tapes** footer button while browsing. Tape mode uses genuine cassette packaging from MusicBrainz/Cover Art Archive when it can match the edition, and a restrained readable text insert when it cannot. Your display choice is saved per browser/device and applies to both sources. Switching styles preserves the open cover and browsing position and never changes playback. Jellyfin's back-cover flip remains available; Spotify artwork stays unmodified in CD mode.
+Choose **CD spines** or **Tapes** on the launch screen, or use the **CDs/Tapes** footer button while browsing. Tape mode uses genuine cassette packaging from MusicBrainz/Cover Art Archive when it can match the edition, and a restrained readable text insert when it cannot. Your display choice is saved per browser/device and applies across compatible sources. Switching styles preserves the open cover and browsing position and never changes playback. Genuine back-cover controls appear only when that artwork exists; Spotify artwork stays unmodified in CD mode.
 
-## Milestone 1 architecture
+## How it works
 
 ```text
 Browser (React/Vite) → SHELF server (Fastify/TypeScript)
@@ -96,9 +119,11 @@ SHELF can run as a single production service in a small Debian LXC. The producti
 
 For Plex, set `PLEX_URL` and `PLEX_TOKEN`; `PLEX_MUSIC_LIBRARY_ID` is optional when the server has one music library. SHELF uses Plex's JSON API, proxies cover artwork so tokens never reach the browser, and sends the selected player the authenticated media-part URL. Keep the Plex server reachable from the player.
 
-For a plain NAS or disk, mount its music folder into the SHELF host/container and set `FILES_MUSIC_PATH` to that mount. Also set `SHELF_PUBLIC_URL` to SHELF's LAN-reachable address, for example `http://192.168.1.30:8787`. SHELF reads embedded tags from AAC, AIFF, FLAC, M4A/ALAC, MP3, Ogg/Opus, WAV and WMA files, groups them into albums, uses embedded or folder artwork, and serves byte ranges directly to the player. A conventional `Artist/Album/Track` folder layout provides useful fallback names when tags are incomplete.
+For a plain NAS or disk, mount the specific music folder—not the root of a large shared drive—into the SHELF host/container and set `FILES_MUSIC_PATH` to that mount. Also set `SHELF_PUBLIC_URL` to SHELF's LAN-reachable address, for example `http://192.168.1.30:8787`. Prefer a read-only mount: SHELF only needs to inspect metadata, read artwork and stream audio.
 
-The folder scanner runs on first use and keeps a five-minute in-memory catalogue. Use `POST /api/files/refresh` after making changes, or restart SHELF. Mount network storage read-only where practical.
+SHELF reads embedded tags from AAC, AIFF, FLAC, M4A/ALAC, MP3, Ogg/Opus, WAV and WMA files, groups them into albums, and uses embedded artwork or a case-insensitive `cover`, `folder` or `front` JPEG/PNG in the album directory. A conventional `Artist/Album/Track` folder layout provides useful fallback names when tags are incomplete. LAN-file albums do not claim to have a back cover when none exists.
+
+The first opening builds an index from the mounted folder and may take several minutes for a very large collection. SHELF saves that index privately in `.data/file-library-v1.json`, loads it immediately after future service restarts, and refreshes stale metadata quietly in the background while continuing to show the saved catalogue. Use `POST /api/files/refresh` when an immediate rescan is required. Keep `.data` out of source control because it contains private integration state and local file paths.
 
 ## Current scope
 
@@ -106,7 +131,7 @@ Implemented: complete Jellyfin, Plex and mounted-folder collections, cover artwo
 
 Local-library album playback is owned by the server. Starting a track loads its album queue in source order and, where supported, preloads the next track with `SetNextAVTransportURI`. The server observes the renderer's track URI and replenishes its next-track buffer; the player performs the actual transition even if the browser closes or the iPad sleeps. Next/Previous use this shared queue, not the browsed album or stale browser state. The album stops at its end; explicit stops stay stopped. A different source taking over relinquishes the local queue. Queue updates retry transient connection failures and report a warning. The in-memory album queue is not restored after a service restart, so start an album again after updating/restarting SHELF.
 
-Also implemented: touch-keyboard search and clear-filter, a natural-language music guide, an optional metadata/listening-history drawer, small persistent personal crates, four subtle room atmospheres, footer transport and random-track controls, centered album expansion, and a launch source chooser.
+Also implemented: a five-source launch chooser (including the honest Apple Music placeholder), touch-keyboard search and clear-filter, a natural-language music guide, an optional metadata/listening-history drawer, small persistent personal crates, four subtle room atmospheres, footer transport and random-track controls, centered album expansion, remembered network-player selection, and a persistent mounted-folder catalogue.
 
 ## Local control API
 

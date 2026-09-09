@@ -51,7 +51,15 @@ Set `PLEX_URL` to the LAN address of Plex Media Server, normally `http://PLEX_IP
 
 ### Optional NAS or local music folder
 
-Mount the music share into the LXC first. For an NFS export, for example, create a read-only mount at `/mnt/music`; for SMB/CIFS, use a credentials file readable only by root rather than writing a password into the SHELF configuration. Proxmox unprivileged containers may need the share mounted on the Proxmox host and bind-mounted into the LXC.
+Mount the exact music directory into the LXC first. Do not point SHELF at the root of a large multi-purpose share. For an NFS export, create a read-only mount at `/mnt/music`; for SMB/CIFS, use a credentials file readable only by root rather than writing a password into the SHELF configuration.
+
+Proxmox unprivileged containers will often use a read-only bind mount from a share already mounted on the Proxmox host. From the Proxmox host, a typical example is:
+
+```sh
+pct set LXC_ID -mp0 /host/path/to/music,mp=/mnt/music,ro=1
+```
+
+Choose an unused `mp` number if the container already has mount points. Confirm the resulting `/mnt/music` directory is readable inside the LXC before starting SHELF.
 
 Then set:
 
@@ -61,6 +69,14 @@ SHELF_PUBLIC_URL=http://SHELF_LXC_IP:8787
 ```
 
 The `shelf` service user needs read and directory-traversal permission on the mount. Prefer a read-only mount. `SHELF_PUBLIC_URL` must be reachable by the selected network player; do not use `localhost`.
+
+The first visit to **Music files** reads the collection's tags and writes a private persistent index to `.data/file-library-v1.json`. Large libraries can take several minutes once; subsequent service restarts load the saved index immediately. To pre-build or deliberately update it from inside the LXC:
+
+```sh
+curl -X POST http://127.0.0.1:8787/api/files/refresh
+```
+
+Keep `.data` when updating SHELF. It contains the mounted-library index and private account/device state and must never be committed or published.
 
 ## 3. Install the service
 

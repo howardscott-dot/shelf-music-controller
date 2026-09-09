@@ -1,6 +1,6 @@
 {
   "name": "shelf",
-  "description": "A touch-first, self-hosted music controller for Jellyfin, Plex, Spotify and music folders, with broad network-player support.",
+  "description": "A touch-first, self-hosted album browser and music remote for Jellyfin, Plex, Spotify, NAS folders and UPnP/DLNA streamers.",
   "private": true,
   "version": "0.1.0",
   "license": "AGPL-3.0-only",
