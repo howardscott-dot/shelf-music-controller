@@ -167,6 +167,7 @@ export class OutputManager {
         if (item.id === this.selectedId) this.selectInMemory(item.id);
       } catch { /* Its established fixed control URLs remain usable. */ }
     }
+    if (this.selectedId) await this.persist();
     return { devices: this.views(), selectedId: this.selectedId };
   }
   async addManual(address: string) {
