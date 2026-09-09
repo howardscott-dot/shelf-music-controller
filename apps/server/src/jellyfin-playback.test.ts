@@ -13,11 +13,10 @@ const url = (id: string) => `http://jellyfin.local/Audio/${id}/stream?api_key=pr
 let playback: JellyfinPlayback;
 let current: WiimTransportState;
 let next: string;
-let wiim: {
-  setUri: ReturnType<typeof vi.fn>; setNextUri: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn>; pause: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>;
-  seek: ReturnType<typeof vi.fn>; setVolume: ReturnType<typeof vi.fn>; setMute: ReturnType<typeof vi.fn>; transportState: ReturnType<typeof vi.fn>; state: ReturnType<typeof vi.fn>;
-};
-let library: { album: ReturnType<typeof vi.fn>; streamUrl: typeof url };
+// A deliberately mutable simulated renderer; individual tests replace methods
+// and transport state to model firmware behaviour.
+let wiim: any;
+let library: any;
 function finishTrack() {
   current = { ...current, trackUri: next || current.trackUri, transport: next ? 'PLAYING' : 'STOPPED', positionSeconds: 0 };
   next = '';
@@ -32,6 +31,7 @@ beforeEach(() => {
     play: vi.fn(async () => { current.transport = 'PLAYING'; }), pause: vi.fn(async () => { current.transport = 'PAUSED_PLAYBACK'; }), stop: vi.fn(async () => { current.transport = 'STOPPED'; }),
     seek: vi.fn(async (seconds: number) => { current.positionSeconds = seconds; }), setVolume: vi.fn(async () => {}), setMute: vi.fn(async () => {}),
     transportState: vi.fn(async () => ({ ...current })), state: vi.fn(async () => ({ ...current, volume: 40, muted: false }))
+    ,supportsNextUri: vi.fn(() => true)
   };
   library = { album: vi.fn(async () => album), streamUrl: url };
   playback = new JellyfinPlayback(wiim, library, () => 'http://jellyfin.local/cover?api_key=private-key');
@@ -126,6 +126,12 @@ describe('continuous Jellyfin album playback', () => {
     await expect(playback.start(album.id, album.tracks[0]!.id)).rejects.toThrow('continuous album playback');
     expect(wiim.play).not.toHaveBeenCalled(); expect(wiim.stop).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(5000); expect(wiim.transportState).not.toHaveBeenCalled();
+  });
+  it('advances server-side when a compatible renderer lacks the optional next-URI action', async () => {
+    wiim.supportsNextUri.mockReturnValue(false); wiim.setNextUri.mockImplementation(async () => {});
+    await playback.start(album.id, album.tracks[0]!.id);
+    current.positionSeconds = 179; await playback.tick(); current.transport = 'STOPPED'; current.positionSeconds = 0; await playback.tick();
+    expect(current.trackUri).toBe(url(album.tracks[1]!.id)); expect(wiim.play).toHaveBeenCalledTimes(2);
   });
   it('validates membership before changing playback', async () => {
     await expect(playback.start(album.id, '4'.repeat(32))).rejects.toThrow('belong');

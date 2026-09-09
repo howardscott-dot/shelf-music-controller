@@ -6,15 +6,18 @@ import { z } from 'zod';
 import type { JellyfinPlayback } from './jellyfin-playback.js';
 import type { JellyfinClient } from './jellyfin.js';
 import type { SpotifyClient } from './spotify.js';
+import type { PlexClient } from './plex.js';
+import type { FileLibrary } from './file-library.js';
 import type { AlbumDetail, AlbumSummary } from './types.js';
 
-type Source = 'jellyfin' | 'spotify';
+type Source = 'jellyfin' | 'spotify' | 'plex' | 'files';
+type Library = Pick<JellyfinClient, 'albums' | 'album'> | Pick<SpotifyClient, 'albums' | 'album'> | Pick<PlexClient, 'albums' | 'album'> | Pick<FileLibrary, 'albums' | 'album'>;
 interface AlbumRef { source: Source; albumId: string; title: string; artist: string; artworkUrl?: string; addedAt: string }
 interface Crate { id: string; name: string; createdAt: string; albums: AlbumRef[] }
 interface HistoryEntry { source: Source; albumId: string; title: string; artist: string; playedAt: string }
 interface FeatureData { crates: Crate[]; history: HistoryEntry[] }
 
-const sourceSchema = z.enum(['jellyfin', 'spotify']);
+const sourceSchema = z.enum(['jellyfin', 'spotify', 'plex', 'files']);
 const albumRefSchema = z.object({ source: sourceSchema, albumId: z.string().min(1).max(256), title: z.string().trim().min(1).max(300), artist: z.string().trim().min(1).max(300), artworkUrl: z.string().max(2048).optional() });
 
 class FeatureStore {
@@ -82,8 +85,8 @@ function guideAlbums(query: string, albums: AlbumSummary[]) {
   return { items: ranked.length ? ranked : albums.slice().sort(() => Math.random() - .5).slice(0, 20), interpretation: parts.length ? `Looking for ${parts.join(' · ')}.` : 'A varied selection from your collection.', shouldPlay: intent.shouldPlay };
 }
 
-async function allAlbums(source: Source, jellyfin: JellyfinClient, spotify: SpotifyClient) {
-  const client = source === 'spotify' ? spotify : jellyfin;
+async function allAlbums(source: Source, libraries: Record<Source, Library>) {
+  const client = libraries[source];
   const items: AlbumSummary[] = [];
   let total = 1;
   const limit = source === 'spotify' ? 50 : 200;
@@ -104,14 +107,15 @@ function relatedTo(album: AlbumDetail, albums: AlbumSummary[]) {
   }).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score).slice(0, 8).map(({ item }) => item);
 }
 
-export async function featureRoutes(app: FastifyInstance, { directory, jellyfin, spotify, playback }: { directory: string; jellyfin: JellyfinClient; spotify: SpotifyClient; playback: JellyfinPlayback }) {
+export async function featureRoutes(app: FastifyInstance, { directory, jellyfin, spotify, plex, files, playback }: { directory: string; jellyfin: JellyfinClient; spotify: SpotifyClient; plex: PlexClient; files: FileLibrary; playback: JellyfinPlayback }) {
   const store = new FeatureStore(directory);
-  const library = (source: Source) => source === 'spotify' ? spotify : jellyfin;
-  app.get('/guide', async (request) => { const { q, source } = z.object({ q: z.string().trim().min(2).max(300), source: sourceSchema }).parse(request.query); return guideAlbums(q, await allAlbums(source, jellyfin, spotify)); });
+  const libraries: Record<Source, Library> = { jellyfin, spotify, plex, files };
+  const library = (source: Source) => libraries[source];
+  app.get('/guide', async (request) => { const { q, source } = z.object({ q: z.string().trim().min(2).max(300), source: sourceSchema }).parse(request.query); return guideAlbums(q, await allAlbums(source, libraries)); });
   app.get('/intelligence/:source/:id', async (request) => {
     const { source, id } = z.object({ source: sourceSchema, id: z.string().min(1).max(256) }).parse(request.params);
     const album = await library(source).album(id); const history = await store.history(source, id);
-    const related = relatedTo(album, await allAlbums(source, jellyfin, spotify));
+    const related = relatedTo(album, await allAlbums(source, libraries));
     return { album, related, listening: { plays: history.length, lastPlayedAt: history[0]?.playedAt }, context: album.year ? `Released in ${album.year}. ${album.tracks.length} tracks with a running time of ${Math.round(album.durationSeconds / 60)} minutes.` : `${album.tracks.length} tracks with a running time of ${Math.round(album.durationSeconds / 60)} minutes.`, credits: [...new Set(album.tracks.flatMap((track) => track.artist.split(', ')))], linerNotes: 'No publisher-supplied liner notes are present in the connected metadata for this edition.', note: 'Credits and context are drawn from your connected music metadata; SHELF never invents missing information.' };
   });
   app.get('/crates', async () => ({ items: await store.crates() }));
@@ -122,8 +126,8 @@ export async function featureRoutes(app: FastifyInstance, { directory, jellyfin,
   app.post('/history', async (request) => { await store.record(albumRefSchema.parse(request.body)); return { ok: true }; });
 
   app.get('/control/v1/status', async (request) => { const source = sourceSchema.default('jellyfin').parse((request.query as { source?: string }).source); return { ok: true, source, playback: await (source === 'spotify' ? spotify.state() : playback.state()), timestamp: new Date().toISOString() }; });
-  app.get('/control/v1/albums', async (request) => { const { source, q, limit } = z.object({ source: sourceSchema.default('jellyfin'), q: z.string().default(''), limit: z.coerce.number().int().min(1).max(100).default(25) }).parse(request.query); const albums = await allAlbums(source, jellyfin, spotify); const term = q.trim().toLocaleLowerCase(); return { items: (term ? albums.filter((album) => `${album.artist} ${album.title}`.toLocaleLowerCase().includes(term)) : albums).slice(0, limit) }; });
-  app.post('/control/v1/play', async (request) => { const value = z.object({ source: sourceSchema, albumId: z.string().min(1).max(256), trackId: z.string().min(1).max(256).optional() }).parse(request.body); const album = await library(value.source).album(value.albumId); const track = value.trackId ? album.tracks.find((item) => item.id === value.trackId) : album.tracks[0]; if (!track) throw new Error('Album has no playable tracks'); if (value.source === 'spotify') await spotify.playTrack(track.id, album.id); else await playback.start(album.id, track.id); await store.record({ source: value.source, albumId: album.id, title: album.title, artist: album.artist, artworkUrl: album.artworkUrl }); return { ok: true, album: { id: album.id, title: album.title, artist: album.artist }, track: { id: track.id, title: track.title } }; });
+  app.get('/control/v1/albums', async (request) => { const { source, q, limit } = z.object({ source: sourceSchema.default('jellyfin'), q: z.string().default(''), limit: z.coerce.number().int().min(1).max(100).default(25) }).parse(request.query); const albums = await allAlbums(source, libraries); const term = q.trim().toLocaleLowerCase(); return { items: (term ? albums.filter((album) => `${album.artist} ${album.title}`.toLocaleLowerCase().includes(term)) : albums).slice(0, limit) }; });
+  app.post('/control/v1/play', async (request) => { const value = z.object({ source: sourceSchema, albumId: z.string().min(1).max(256), trackId: z.string().min(1).max(256).optional() }).parse(request.body); const album = await library(value.source).album(value.albumId); const track = value.trackId ? album.tracks.find((item) => item.id === value.trackId) : album.tracks[0]; if (!track) throw new Error('Album has no playable tracks'); if (value.source === 'spotify') await spotify.playTrack(track.id, album.id); else if (value.source === 'plex') await playback.start(album.id, track.id, plex, plex.playerArtworkUrl(album.id)); else if (value.source === 'files') await playback.start(album.id, track.id, files, files.playerArtworkUrl(album.id)); else await playback.start(album.id, track.id); await store.record({ source: value.source, albumId: album.id, title: album.title, artist: album.artist, artworkUrl: album.artworkUrl }); return { ok: true, album: { id: album.id, title: album.title, artist: album.artist }, track: { id: track.id, title: track.title } }; });
   app.post('/control/v1/transport', async (request) => { const { source, action } = z.object({ source: sourceSchema, action: z.enum(['play', 'pause', 'next', 'previous', 'stop']) }).parse(request.body); if (source === 'spotify') { if (action === 'stop') await spotify.control('pause', {}); else await spotify.control(action, {}); } else await playback.control(action); return { ok: true }; });
   app.post('/control/v1/volume', async (request) => { const { source, volume } = z.object({ source: sourceSchema, volume: z.number().min(0).max(100) }).parse(request.body); if (source === 'spotify') await spotify.control('volume', { volume }); else await playback.control('volume', { volume }); return { ok: true, volume }; });
   app.get('/control/v1/openapi.json', async () => ({ openapi: '3.1.0', info: { title: 'SHELF Local Control API', version: '1.0.0', description: 'LAN-local controls for Home Assistant, Apple Shortcuts and trusted agents.' }, servers: [{ url: '/api/control/v1' }], paths: { '/status': { get: { summary: 'Read playback state' } }, '/albums': { get: { summary: 'Find albums' } }, '/play': { post: { summary: 'Play an album or track' } }, '/transport': { post: { summary: 'Play, pause, stop or skip' } }, '/volume': { post: { summary: 'Set volume from 0 to 100' } } } }));

@@ -1,8 +1,8 @@
 # SHELF
 
-**A touch-first, self-hosted music controller for browsing albums as CDs and cassettes, with Jellyfin, Spotify and WiiM playback.**
+**A touch-first, self-hosted music controller for browsing albums as CDs and cassettes, with Jellyfin, Plex, Spotify, music-folder and network-player support.**
 
-SHELF is a platform-independent web controller for Jellyfin and, optionally, Spotify Premium. Choose a source when you launch the app; the footer's **Source** button returns to the chooser without stopping music. Apple Music is visibly reserved as **Coming soon**, not an implemented integration. Playback travels directly from Jellyfin or Spotify to your WiiM, not through the browser.
+SHELF is a platform-independent web controller for Jellyfin, Plex, mounted music folders and, optionally, Spotify Premium. Choose a collection when you launch the app; the footer's **Source** button returns to the chooser without stopping music. Apple Music is visibly reserved as **Coming soon**, not an implemented integration. Local music travels to a user-selected network player rather than through the browser; Spotify continues to use Spotify Connect's own device picker.
 
 SHELF is an independent open-source project. It is not affiliated with or endorsed by any music-service, hardware or artwork provider. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for service, artwork, font and trademark information.
 
@@ -30,20 +30,22 @@ Choose **CD spines** or **Tapes** on the launch screen, or use the **CDs/Tapes**
 
 ```text
 Browser (React/Vite) → SHELF server (Fastify/TypeScript)
-                           ├─ Jellyfin REST/images
-                           └─ WiiM UPnP AVTransport/RenderingControl
+                           ├─ Jellyfin or Plex REST/images
+                           ├─ Mounted local/NAS music folders
+                           └─ Discovered UPnP AVTransport/RenderingControl
 
-Jellyfin media URL ───────────────────────────────→ WiiM Pro → amplifier
+Music URL ─────────────────────────────→ Selected network player → amplifier
 ```
 
-The server keeps credentials and LAN protocols out of the browser. The Jellyfin view polls the WiiM every two seconds. Spotify uses its Web API to control a user-selected Spotify Connect device; it never sends Spotify audio through the Jellyfin/UPnP path. Playback polling is shared/cached across clients, slows down on errors, and skips hidden tabs.
+The server keeps credentials and LAN protocols out of the browser. Local-library views poll the selected player every two seconds. Spotify uses its Web API to control a user-selected Spotify Connect device; it never sends Spotify audio through the local-library/UPnP path. Playback polling is shared/cached across clients, slows down on errors, and skips hidden tabs.
 
 ## Requirements
 
 - Node.js 20+
-- Jellyfin and a supported UPnP renderer on the same trusted network as the SHELF server
+- At least the existing Jellyfin connection, plus any optional Plex or mounted-folder sources
+- A supported UPnP/DLNA renderer on the same trusted network as the SHELF server
 - A Jellyfin user ID and dedicated API token
-- Static/reserved LAN addresses (or stable local DNS names) for Jellyfin and WiiM
+- Static/reserved LAN addresses (or stable local DNS names) for media servers and players are recommended
 
 ## Configure and run locally
 
@@ -58,14 +60,22 @@ Open `http://localhost:5173`. The server runs on port 8787. Verify it with `curl
 
 Important: `JELLYFIN_URL` must not be `localhost` unless Jellyfin and the WiiM are the same machine. WiiM receives this URL and must be able to fetch it. Use the server's LAN address, such as `http://192.168.1.10:8096`.
 
+## Network players
+
+Open **Output** in the footer to scan the LAN and choose a player. SHELF reads each device's advertised UPnP description, so it uses the device's actual control addresses rather than assuming WiiM-specific paths. This standards-based route is intended for compatible streamers and receivers from WiiM, Naim, Cambridge Audio, Denon/Marantz, Yamaha/MusicCast, Linn, Sony, Pioneer/Onkyo and others. Exact support still depends on the model and firmware exposing a controllable `AVTransport` and `RenderingControl` service.
+
+If multicast discovery cannot cross a VLAN, enter the player's IP address or complete UPnP description URL manually. The selected player is stored privately in `.data/output.json`. Changing it never starts music. `WIIM_HOST` remains as a backward-compatible optional fallback for existing installations.
+
+The UPnP `SetNextAVTransportURI` action is optional. SHELF uses it for gapless device-side album queues when available and falls back to server-managed track changes on compatible players that omit it.
+
 ## First real playback test
 
 1. Confirm albums and artwork load in SHELF.
 2. Open an album and press a track (or **Play Album**, which starts track 1).
-3. SHELF gives WiiM a direct Jellyfin audio URL using UPnP `SetAVTransportURI`, then calls `Play`.
-4. Confirm the persistent strip shows WiiM's real state and that play/pause, seek, mute, and volume work.
+3. SHELF gives the selected player a direct audio URL using UPnP `SetAVTransportURI`, then calls `Play`.
+4. Confirm the persistent strip shows the player's real state and that play/pause, seek, mute, and volume work.
 
-If playback fails, check the server log. From the machine running SHELF, verify `http://WIIM_HOST:49152/description.xml` is reachable and that the configured Jellyfin host is reachable by other LAN devices.
+If playback fails, check the server log. Confirm the selected player's description URL is reachable from SHELF and that the configured media-server URL is reachable by the player.
 
 ## Security and network constraints
 
@@ -82,11 +92,19 @@ UPnP renderers cannot attach Jellyfin authorization headers. For the vertical sl
 
 SHELF can run as a single production service in a small Debian LXC. The production server serves both the compiled interface and `/api` on port 8787, so the MacBook does not need to remain on. See [`deploy/README.md`](deploy/README.md) for the LXC sizing, installation, systemd service, update, and firewall instructions.
 
+## Plex and NAS/music folders
+
+For Plex, set `PLEX_URL` and `PLEX_TOKEN`; `PLEX_MUSIC_LIBRARY_ID` is optional when the server has one music library. SHELF uses Plex's JSON API, proxies cover artwork so tokens never reach the browser, and sends the selected player the authenticated media-part URL. Keep the Plex server reachable from the player.
+
+For a plain NAS or disk, mount its music folder into the SHELF host/container and set `FILES_MUSIC_PATH` to that mount. Also set `SHELF_PUBLIC_URL` to SHELF's LAN-reachable address, for example `http://192.168.1.30:8787`. SHELF reads embedded tags from AAC, AIFF, FLAC, M4A/ALAC, MP3, Ogg/Opus, WAV and WMA files, groups them into albums, uses embedded or folder artwork, and serves byte ranges directly to the player. A conventional `Artist/Album/Track` folder layout provides useful fallback names when tags are incomplete.
+
+The folder scanner runs on first use and keeps a five-minute in-memory catalogue. Use `POST /api/files/refresh` after making changes, or restart SHELF. Mount network storage read-only where practical.
+
 ## Current scope
 
-Implemented: the complete real album collection, cover artwork, virtualized touch-first horizontal spine browsing, album details/tracks, continuous album playback, play/pause/stop/seek/volume/mute backend operations, and WiiM state polling. Missing Jellyfin covers are resolved conservatively through MusicBrainz identifiers and the Cover Art Archive; weak metadata matches are rejected rather than showing an incorrect cover. Physical `Spine` or `Back + Spine` scans are cropped into cached 110×1000 spine assets. Opening an album presents its high-resolution front and archived back artwork as an open jewel case.
+Implemented: complete Jellyfin, Plex and mounted-folder collections, cover artwork, virtualized touch-first horizontal spine browsing, album details/tracks, continuous album playback, play/pause/stop/seek/volume/mute backend operations, and selected-player state polling. Missing Jellyfin covers are resolved conservatively through MusicBrainz identifiers and the Cover Art Archive; weak metadata matches are rejected rather than showing an incorrect cover. Physical `Spine` or `Back + Spine` scans are cropped into cached 110×1000 spine assets. Opening an album presents its high-resolution front and archived back artwork as an open jewel case.
 
-Jellyfin album playback is owned by the server. Starting a track loads its album queue in Jellyfin order and preloads the next track using WiiM's `SetNextAVTransportURI`. The server observes the renderer's track URI and replenishes its next-track buffer; the WiiM performs the actual transition, even if the browser closes or the iPad sleeps. Next/Previous use this shared queue, not the browsed album or stale browser state. The album stops at its end; observing STOPPED never triggers Play. A different source taking over relinquishes the local queue. Queue updates retry transient connection failures and report a warning. This requires native next-URI support and a running SHELF server; the in-memory album queue is not restored after a service restart, so start an album again after updating/restarting SHELF. Tests use a simulated renderer; an end-to-end transition on the household stereo must be confirmed separately.
+Local-library album playback is owned by the server. Starting a track loads its album queue in source order and, where supported, preloads the next track with `SetNextAVTransportURI`. The server observes the renderer's track URI and replenishes its next-track buffer; the player performs the actual transition even if the browser closes or the iPad sleeps. Next/Previous use this shared queue, not the browsed album or stale browser state. The album stops at its end; explicit stops stay stopped. A different source taking over relinquishes the local queue. Queue updates retry transient connection failures and report a warning. The in-memory album queue is not restored after a service restart, so start an album again after updating/restarting SHELF.
 
 Also implemented: touch-keyboard search and clear-filter, a natural-language music guide, an optional metadata/listening-history drawer, small persistent personal crates, four subtle room atmospheres, footer transport and random-track controls, centered album expansion, and a launch source chooser.
 
@@ -125,10 +143,11 @@ References: [Spotify Web API](https://developer.spotify.com/documentation/web-ap
 
 - Jellyfin's generated API defines user-scoped `Items` queries and original/download media endpoints: https://github.com/jellyfin/jellyfin-sdk-typescript
 - Jellyfin documents HTTP streaming and local-network addressing: https://jellyfin.org/docs/general/post-install/networking/
-- WiiM publishes both HTTP and UPnP APIs for its products: https://wiimhome.com/support
+- UPnP defines standard MediaRenderer, AVTransport and RenderingControl services: https://upnp.org/specs/av/UPnP-av-MediaRenderer-v1-Device.pdf
+- Plex documents its JSON media-server API and authentication headers: https://developer.plex.tv/pms/
 - MusicBrainz's Cover Art Archive provides curated release artwork and 250/500/1200px variants: https://musicbrainz.org/doc/Cover_Art_Archive/API
 
-The WiiM's advertised `description.xml` remains the source of truth for the exact control URLs on the installed firmware; `WIIM_PORT` is configurable for that reason.
+Every discovered player's advertised device description remains the source of truth for its control URLs and service versions.
 
 ## License
 

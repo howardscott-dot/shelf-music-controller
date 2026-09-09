@@ -1,4 +1,4 @@
-import type { AlbumDetail, AlbumIntelligence, AlbumSummary, Crate, GuideResult, PlaybackState, Source, SpotifyStatus, SpotifyDevices } from './types';
+import type { AlbumDetail, AlbumIntelligence, AlbumSummary, Crate, GuideResult, OutputDevices, PlaybackState, Source, SourceStatus, SpotifyStatus, SpotifyDevices } from './types';
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public retryAfter = 0) { super(message); }
@@ -22,7 +22,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function libraryApi(source: Source) {
-  const prefix = source === 'spotify' ? '/api/spotify' : '/api';
+  const prefix = source === 'spotify' ? '/api/spotify' : source === 'plex' ? '/api/plex' : source === 'files' ? '/api/files' : '/api';
   return {
   albums: async () => {
     const items: AlbumSummary[] = [];
@@ -48,6 +48,14 @@ export const spotifyApi = {
   device: (id: string) => request('/api/spotify/devices', { method: 'POST', body: JSON.stringify({ id }) }),
   disconnect: () => request('/api/spotify/disconnect', { method: 'POST', body: '{}' }),
   search: (query: string, start = 0) => request<{ items: AlbumSummary[]; total: number }>(`/api/spotify/search?q=${encodeURIComponent(query)}&start=${start}`)
+};
+
+export const sourceApi = { status: () => request<SourceStatus>('/api/sources/status') };
+export const outputApi = {
+  devices: () => request<OutputDevices>('/api/outputs/'),
+  discover: () => request<OutputDevices>('/api/outputs/discover', { method: 'POST', body: '{}' }),
+  select: (id: string) => request('/api/outputs/select', { method: 'POST', body: JSON.stringify({ id }) }),
+  manual: (address: string) => request<OutputDevices>('/api/outputs/manual', { method: 'POST', body: JSON.stringify({ address }) })
 };
 
 export const featureApi = {

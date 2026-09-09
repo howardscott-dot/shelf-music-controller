@@ -7,13 +7,15 @@ import { Shelf } from './components/Shelf';
 import type { AlbumDetail } from './types';
 
 const mock = vi.hoisted(() => ({
-  status: vi.fn(), albums: vi.fn(), album: vi.fn(), state: vi.fn(), playTrack: vi.fn(), control: vi.fn(), search: vi.fn(), devices: vi.fn(), device: vi.fn(), disconnect: vi.fn(), cassette: vi.fn(), crates: vi.fn(), guide: vi.fn(), intelligence: vi.fn(), createCrate: vi.fn(), deleteCrate: vi.fn(), addToCrate: vi.fn(), removeFromCrate: vi.fn(), recordPlay: vi.fn()
+  status: vi.fn(), albums: vi.fn(), album: vi.fn(), state: vi.fn(), playTrack: vi.fn(), control: vi.fn(), search: vi.fn(), devices: vi.fn(), device: vi.fn(), disconnect: vi.fn(), cassette: vi.fn(), crates: vi.fn(), guide: vi.fn(), intelligence: vi.fn(), createCrate: vi.fn(), deleteCrate: vi.fn(), addToCrate: vi.fn(), removeFromCrate: vi.fn(), recordPlay: vi.fn(), outputDevices: vi.fn(), discoverOutputs: vi.fn(), selectOutput: vi.fn(), manualOutput: vi.fn()
 }));
 vi.mock('./cassette-art', () => ({ useCassetteArtwork: (album: unknown, enabled: boolean) => album && enabled ? mock.cassette(album) : undefined }));
 vi.mock('./api', () => ({
   ApiError: class extends Error {},
   libraryApi: () => ({ albums: mock.albums, album: mock.album, state: mock.state, playTrack: mock.playTrack, control: mock.control }),
   spotifyApi: { status: mock.status, search: mock.search, devices: mock.devices, device: mock.device, disconnect: mock.disconnect }
+  ,sourceApi: { status: mock.status }
+  ,outputApi: { devices: mock.outputDevices, discover: mock.discoverOutputs, select: mock.selectOutput, manual: mock.manualOutput }
   ,featureApi: { crates: mock.crates, guide: mock.guide, intelligence: mock.intelligence, createCrate: mock.createCrate, deleteCrate: mock.deleteCrate, addToCrate: mock.addToCrate, removeFromCrate: mock.removeFromCrate, recordPlay: mock.recordPlay }
 }));
 
@@ -32,7 +34,7 @@ beforeEach(() => {
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value() { this.open = true; } });
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   vi.resetAllMocks();
-  mock.status.mockResolvedValue({ configured: true, connected: true, connectUrl: 'http://127.0.0.1:8787/api/spotify/connect' });
+  mock.status.mockResolvedValue({ jellyfin: { configured: true, connected: true }, spotify: { configured: true, connected: true, connectUrl: 'http://127.0.0.1:8787/api/spotify/connect' }, plex: { configured: false }, files: { configured: false } });
   mock.albums.mockResolvedValue({ items: [album], total: 1 });
   mock.album.mockResolvedValue(album);
   mock.state.mockResolvedValue({ transport: 'STOPPED', positionSeconds: 0, durationSeconds: 0, volume: 50, muted: false });
@@ -40,6 +42,8 @@ beforeEach(() => {
   mock.crates.mockResolvedValue({ items: [] }); mock.recordPlay.mockResolvedValue({ ok: true });
   mock.devices.mockResolvedValue({ devices: [{ id: 'wiim', name: 'WiiM Pro', active: false, restricted: false }] });
   mock.device.mockResolvedValue({ ok: true });
+  mock.discoverOutputs.mockResolvedValue({ devices: [{ id: 'wiim', name: 'WiiM Pro', address: '192.0.2.2', origin: 'configured', selected: true, protocol: 'UPnP / DLNA' }], selectedId: 'wiim' });
+  mock.selectOutput.mockResolvedValue({ ok: true }); mock.manualOutput.mockResolvedValue({ devices: [] });
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -56,16 +60,20 @@ describe('launch and source isolation', () => {
     expect(mock.albums).not.toHaveBeenCalled(); expect(mock.control).not.toHaveBeenCalled();
   });
   it('keeps Jellyfin accessible when Spotify is not configured', async () => {
-    mock.status.mockResolvedValue({ configured: false, connected: false });
+    mock.status.mockResolvedValue({ jellyfin: { configured: true }, spotify: { configured: false, connected: false }, plex: { configured: false }, files: { configured: false } });
     await render(); await click(button('Jellyfin'));
     expect(container.querySelector('.shelf')).toBeTruthy(); expect(mock.albums).toHaveBeenCalledTimes(1);
   });
   it('shows real setup instructions, not a fake Spotify collection, before connection', async () => {
-    mock.status.mockResolvedValue({ configured: false, connected: false });
+    mock.status.mockResolvedValue({ jellyfin: { configured: true }, spotify: { configured: false, connected: false }, plex: { configured: false }, files: { configured: false } });
     await render(); await click(button('Spotify'));
     expect(container.textContent).toContain('Client ID');
     expect(container.textContent).toContain('http://127.0.0.1:8787/api/spotify/callback');
     expect(mock.albums).not.toHaveBeenCalled();
+  });
+  it('offers configured Plex and mounted-folder collections without pretending unavailable sources work', async () => {
+    mock.status.mockResolvedValue({ jellyfin: { configured: true }, spotify: { configured: true, connected: true, connectUrl: '/connect' }, plex: { configured: true, connected: true }, files: { configured: true, connected: true, albums: 42 } });
+    await render(); expect(button('Plex')?.disabled).toBe(false); expect(button('Music files')?.disabled).toBe(false); expect(container.textContent).toContain('OPEN 42 ALBUMS');
   });
   it('switches back to the chooser without stopping playback and clears selected albums', async () => {
     await render(); await click(button('Spotify')); await click(container.querySelector('.spine'));
@@ -127,6 +135,14 @@ describe('Spotify shelf and footer', () => {
     const localAlbum = { ...album, source: 'jellyfin' as const, artworkUrl: '/api/artwork/local?width=1200', backArtworkUrl: '/api/artwork/local?side=back' };
     await act(async () => root.render(<Shelf albums={[localAlbum]} selected={localAlbum} onSelect={() => {}} onClose={() => {}} onPlay={() => {}} />));
     expect(container.querySelector('.cover-front img')).toBeTruthy(); expect(container.querySelector('.cover-flip')).toBeTruthy(); expect(container.querySelector('.cover-play')).toBeTruthy();
+  });
+});
+
+describe('local network outputs', () => {
+  it('discovers and selects a named UPnP player without starting music', async () => {
+    await render(); await click(button('Jellyfin')); await click(container.querySelector('[aria-label="Choose playback output"]'));
+    expect(container.textContent).toContain('NETWORK PLAYERS'); expect(container.textContent).toContain('WiiM Pro');
+    await click(button('WiiM Pro')); expect(mock.selectOutput).toHaveBeenCalledWith('wiim'); expect(mock.playTrack).not.toHaveBeenCalled();
   });
 });
 

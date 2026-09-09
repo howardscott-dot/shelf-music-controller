@@ -5,21 +5,25 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Config } from './config.js';
 import { JellyfinClient } from './jellyfin.js';
-import { WiimClient } from './wiim.js';
 import { SpotifyClient, SpotifyError } from './spotify.js';
 import { spotifyRoutes } from './spotify-routes.js';
 import { ZodError } from 'zod';
 import { CassetteArchive, cassetteRoutes } from './cassettes.js';
 import { JellyfinPlayback, jellyfinPlaybackRoutes } from './jellyfin-playback.js';
 import { featureRoutes } from './features.js';
+import { OutputManager, outputRoutes } from './outputs.js';
+import { PlexClient, plexRoutes } from './plex.js';
+import { FileLibrary, fileLibraryRoutes } from './file-library.js';
 
 export function buildApp(config: Config) {
   const app = Fastify({ logger: { level: config.LOG_LEVEL, serializers: { req: (request) => ({ method: request.method, url: request.url?.split('?')[0], hostname: request.hostname }) } } });
   const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));
   const jellyfin = new JellyfinClient(config.JELLYFIN_URL, config.JELLYFIN_API_KEY, config.JELLYFIN_USER_ID);
-  const wiim = new WiimClient(config.WIIM_HOST, config.WIIM_PORT);
+  const outputs = new OutputManager(config.SHELF_DATA_DIR, config.WIIM_HOST || undefined, config.WIIM_PORT);
   const spotify = new SpotifyClient(config);
-  const playback = new JellyfinPlayback(wiim, jellyfin, (albumId) => {
+  const plex = new PlexClient(config.PLEX_URL || undefined, config.PLEX_TOKEN || undefined, config.PLEX_MUSIC_LIBRARY_ID || undefined);
+  const files = new FileLibrary(config.FILES_MUSIC_PATH || undefined, config.SHELF_PUBLIC_URL || undefined);
+  const playback = new JellyfinPlayback(outputs, jellyfin, (albumId) => {
     const artwork = jellyfin.imageUrl(albumId, 720);
     artwork.searchParams.set('api_key', config.JELLYFIN_API_KEY);
     return artwork.toString();
@@ -28,11 +32,18 @@ export function buildApp(config: Config) {
   // website needs permission to read or control the household music account.
   app.register(cors, { origin: false });
   app.register(spotifyRoutes, { prefix: '/api/spotify', spotify });
+  app.register(plexRoutes, { prefix: '/api/plex', plex, playback });
+  app.register(fileLibraryRoutes, { prefix: '/api/files', library: files, playback });
+  app.register(outputRoutes, { prefix: '/api/outputs', outputs, beforeChoose: () => playback.release() });
   app.register(cassetteRoutes, { prefix: '/api', archive: new CassetteArchive() });
   app.register(jellyfinPlaybackRoutes, { prefix: '/api', playback });
-  app.register(featureRoutes, { prefix: '/api', directory: config.SHELF_DATA_DIR, jellyfin, spotify, playback });
+  app.register(featureRoutes, { prefix: '/api', directory: config.SHELF_DATA_DIR, jellyfin, spotify, plex, files, playback });
 
   app.get('/api/health', async () => ({ ok: true }));
+  app.get('/api/sources/status', async () => {
+    const [spotifyStatus, plexStatus, fileStatus] = await Promise.all([spotify.status(), plex.status(), files.status()]);
+    return { jellyfin: { configured: true, connected: true }, spotify: spotifyStatus, plex: plexStatus, files: fileStatus };
+  });
   app.get('/api/albums', async (request) => {
     const query = request.query as { start?: string; limit?: string };
     return jellyfin.albums(Number(query.start ?? 0), Math.min(200, Number(query.limit ?? 100)));
@@ -84,7 +95,7 @@ export function buildApp(config: Config) {
     if (error instanceof ZodError) return reply.code(400).send({ error: 'Invalid request. Check the selected item and control value.' });
     app.log.error(error);
     const message = error instanceof Error ? error.message : 'Unexpected integration error';
-    reply.code(message.includes('required') || message.includes('belong') ? 400 : 502).send({ error: message });
+    reply.code(message.includes('Choose a network player') || message.includes('not configured') ? 409 : message.includes('required') || message.includes('belong') ? 400 : 502).send({ error: message });
   });
   return app;
 }

@@ -1,5 +1,5 @@
 export interface AlbumSummary {
-  source?: 'jellyfin' | 'spotify';
+  source?: 'jellyfin' | 'spotify' | 'plex' | 'files';
   externalUrl?: string;
   id: string;
   title: string;

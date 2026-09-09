@@ -25,6 +25,12 @@ it('reads the track URI as internal transport identity, independent of display m
 });
 it('does not leak stream credentials through SOAP fault messages', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => xml('<s:Fault><detail><errorCode>401</errorCode><errorDescription>http://music?api_key=secret</errorDescription></detail></s:Fault>')));
-  await expect(new WiimClient('speaker.local').setNextUri('')).rejects.toThrow('code 401');
-  await expect(new WiimClient('speaker.local').setNextUri('')).rejects.not.toThrow('secret');
+  const track = { id: 'track', title: 'Title', artist: 'Artist', album: 'Album', durationSeconds: 60, disc: 1, index: 1 };
+  await expect(new WiimClient('speaker.local').setUri('http://music?api_key=secret', track, '')).rejects.toThrow('code 401');
+  await expect(new WiimClient('speaker.local').setUri('http://music?api_key=secret', track, '')).rejects.not.toThrow('secret');
+});
+it('recognises renderers without the optional native next-URI action', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => xml('<s:Fault><detail><errorCode>401</errorCode></detail></s:Fault>')));
+  const client = new WiimClient('speaker.local'); await client.setNextUri('http://music/next');
+  expect(client.supportsNextUri()).toBe(false);
 });

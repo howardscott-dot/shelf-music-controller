@@ -4,6 +4,12 @@ import { formatClock, parseClock, xmlEscape } from './xml.js';
 
 type SoapArgs = Record<string, string | number>;
 type XmlNode = Record<string, unknown>;
+export interface UpnpTarget {
+  avTransportUrl: string;
+  renderingControlUrl: string;
+  avTransportType?: string;
+  renderingControlType?: string;
+}
 export interface WiimTransportState {
   transport: PlaybackState['transport'];
   trackUri?: string;
@@ -29,23 +35,35 @@ function firstText(node: unknown, key: string): string | undefined {
 }
 
 export class WiimClient {
-  private readonly baseUrl: string;
-  constructor(host: string, port = 49152) { this.baseUrl = `http://${host}:${port}`; }
+  private readonly target: Required<UpnpTarget>;
+  private nextUriSupported: boolean | undefined;
+  constructor(host: string | UpnpTarget, port = 49152) {
+    this.target = typeof host === 'string' ? {
+      avTransportUrl: `http://${host}:${port}/upnp/control/rendertransport1`,
+      renderingControlUrl: `http://${host}:${port}/upnp/control/rendercontrol1`,
+      avTransportType: 'urn:schemas-upnp-org:service:AVTransport:1',
+      renderingControlType: 'urn:schemas-upnp-org:service:RenderingControl:1'
+    } : {
+      ...host,
+      avTransportType: host.avTransportType ?? 'urn:schemas-upnp-org:service:AVTransport:1',
+      renderingControlType: host.renderingControlType ?? 'urn:schemas-upnp-org:service:RenderingControl:1'
+    };
+  }
 
   private async soap(service: 'AVTransport' | 'RenderingControl', action: string, args: SoapArgs): Promise<XmlNode> {
-    const version = '1';
-    const path = service === 'AVTransport' ? '/upnp/control/rendertransport1' : '/upnp/control/rendercontrol1';
+    const serviceType = service === 'AVTransport' ? this.target.avTransportType : this.target.renderingControlType;
+    const url = service === 'AVTransport' ? this.target.avTransportUrl : this.target.renderingControlUrl;
     const bodyArgs = Object.entries(args).map(([key, value]) => `<${key}>${xmlEscape(String(value))}</${key}>`).join('');
-    const body = `<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:${action} xmlns:u="urn:schemas-upnp-org:service:${service}:${version}">${bodyArgs}</u:${action}></s:Body></s:Envelope>`;
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method: 'POST', headers: { 'Content-Type': 'text/xml; charset="utf-8"', SOAPAction: `"urn:schemas-upnp-org:service:${service}:${version}#${action}"` }, body,
+    const body = `<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:${action} xmlns:u="${serviceType}">${bodyArgs}</u:${action}></s:Body></s:Envelope>`;
+    const response = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'text/xml; charset="utf-8"', SOAPAction: `"${serviceType}#${action}"` }, body,
       signal: AbortSignal.timeout(5_000)
     });
     const text = await response.text();
     const result = parser.parse(text) as XmlNode;
     // Device responses can contain authenticated stream URLs. Do not put the
     // response body into public API errors or logs.
-    if (!response.ok || firstText(result, 'errorCode')) throw new Error(`WiiM ${action} failed (${response.status}, code ${firstText(result, 'errorCode') ?? 'unknown'})`);
+    if (!response.ok || firstText(result, 'errorCode')) throw new Error(`Network player ${action} failed (${response.status}, code ${firstText(result, 'errorCode') ?? 'unknown'})`);
     return result;
   }
 
@@ -58,8 +76,16 @@ export class WiimClient {
   }
 
   async setNextUri(uri: string, track?: Track, artworkUri = ''): Promise<void> {
-    await this.soap('AVTransport', 'SetNextAVTransportURI', { InstanceID: 0, NextURI: uri, NextURIMetaData: track ? this.metadata(uri, track, artworkUri) : '' });
+    if (this.nextUriSupported === false) return;
+    try {
+      await this.soap('AVTransport', 'SetNextAVTransportURI', { InstanceID: 0, NextURI: uri, NextURIMetaData: track ? this.metadata(uri, track, artworkUri) : '' });
+      this.nextUriSupported = true;
+    } catch (error) {
+      if (error instanceof Error && /code (401|602)\b/.test(error.message)) { this.nextUriSupported = false; return; }
+      throw error;
+    }
   }
+  supportsNextUri() { return this.nextUriSupported; }
 
   async playUri(uri: string, track: Track, artworkUri: string): Promise<void> {
     await this.setUri(uri, track, artworkUri);

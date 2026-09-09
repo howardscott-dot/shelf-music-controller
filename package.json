@@ -1,6 +1,6 @@
 {
   "name": "shelf",
-  "description": "A touch-first, self-hosted music controller for browsing albums as CDs and cassettes, with Jellyfin, Spotify and WiiM playback.",
+  "description": "A touch-first, self-hosted music controller for Jellyfin, Plex, Spotify and music folders, with broad network-player support.",
   "private": true,
   "version": "0.1.0",
   "license": "AGPL-3.0-only",

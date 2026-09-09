@@ -16,7 +16,7 @@ if [[ "$(pwd -P)" != "${APP_DIR}" ]]; then
 fi
 
 if [[ ! -f "${APP_DIR}/.env" ]]; then
-  printf 'Missing %s/.env. Copy .env.example and fill in the Jellyfin and WiiM settings first.\n' "${APP_DIR}" >&2
+  printf 'Missing %s/.env. Copy .env.example and fill in the media-library settings first.\n' "${APP_DIR}" >&2
   exit 1
 fi
 

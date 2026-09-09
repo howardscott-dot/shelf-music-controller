@@ -1,24 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ApiError, featureApi, libraryApi, spotifyApi } from './api';
+import { ApiError, featureApi, libraryApi, sourceApi, spotifyApi } from './api';
 import { AlbumIntelligence } from './components/AlbumIntelligence';
 import { NowPlaying } from './components/NowPlaying';
 import { Shelf } from './components/Shelf';
 import { SearchPanel } from './components/SearchPanel';
 import { SourcePicker } from './components/SourcePicker';
 import { SpotifyPanel } from './components/SpotifyPanel';
+import { OutputPanel } from './components/OutputPanel';
 import { ToolsPanel, type Environment } from './components/ToolsPanel';
-import type { AlbumDetail, AlbumIntelligence as Intelligence, AlbumSummary, Crate, GuideResult, PlaybackState, Source, SpotifyStatus, SpineStyle, Track } from './types';
+import type { AlbumDetail, AlbumIntelligence as Intelligence, AlbumSummary, Crate, GuideResult, PlaybackState, Source, SourceStatus, SpineStyle, Track } from './types';
 import { readSpineStyle, saveSpineStyle } from './spine-style';
 
 export default function App() {
   const [source, setSource] = useState<Source>();
   const [spineStyle, setSpineStyle] = useState<SpineStyle>(readSpineStyle);
   useEffect(() => saveSpineStyle(spineStyle), [spineStyle]);
-  const [spotify, setSpotify] = useState<SpotifyStatus>();
+  const [status, setStatus] = useState<SourceStatus>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   async function refresh() {
-    try { setSpotify(await spotifyApi.status()); setError(undefined); } catch (e) { setError((e as Error).message); }
+    try { setStatus(await sourceApi.status()); setError(undefined); } catch (e) { setError((e as Error).message); }
   }
   useEffect(() => {
     const result = new URLSearchParams(window.location.search).get('spotify');
@@ -29,7 +30,7 @@ export default function App() {
     void refresh();
   }, []);
   function sources() { setSource(undefined); void refresh(); }
-  if (!source) return <SourcePicker status={spotify} error={error} notice={notice} onRefresh={refresh} onChoose={setSource} spineStyle={spineStyle} onSpineStyle={setSpineStyle} />;
+  if (!source) return <SourcePicker status={status} error={error} notice={notice} onRefresh={refresh} onChoose={setSource} spineStyle={spineStyle} onSpineStyle={setSpineStyle} />;
   return <Library key={source} source={source} onSources={sources} spineStyle={spineStyle} onSpineStyle={setSpineStyle} />;
 }
 
@@ -54,6 +55,7 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
     try { const value = localStorage.getItem('shelf.environment'); return value === 'amber' || value === 'midnight' || value === 'forest' ? value : 'neutral'; } catch { return 'neutral'; }
   });
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [outputsOpen, setOutputsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
@@ -125,7 +127,7 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
       const result = await featureApi.guide(prompt, source); setGuideResult(result);
       setCatalogue({ query: prompt, items: result.items, total: result.items.length, start: 0, kind: 'guide' }); setSelected(undefined); setSearchOpen(false); setPage(0);
       if (result.shouldPlay && result.items[0]) { const detail = await api.album(result.items[0].id); setSelected(detail); if (detail.tracks[0]) { await startTrack(detail.tracks[0], detail); setState(await api.state()); } }
-    } catch (e) { setError((e as Error).message); if (e instanceof ApiError && e.status === 409 && isSpotify) setDevicesOpen(true); }
+    } catch (e) { setError((e as Error).message); if (e instanceof ApiError && e.status === 409 && isSpotify) setDevicesOpen(true); else if (!isSpotify && (e as Error).message.includes('Choose a network player')) setOutputsOpen(true); }
     finally { setSearching(false); }
   }
   function closeAlbum() { selectionRequest.current += 1; setSelected(undefined); setLoadingAlbumId(undefined); }
@@ -147,7 +149,7 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
     if (!selected || controlLock.current) return;
     controlLock.current = true; setBusy(true); setError(undefined);
     try { await startTrack(track, selected); setState(await api.state()); }
-    catch (e) { setError((e as Error).message); if (e instanceof ApiError && e.status === 409 && isSpotify) setDevicesOpen(true); }
+    catch (e) { setError((e as Error).message); if (e instanceof ApiError && e.status === 409 && isSpotify) setDevicesOpen(true); else if (!isSpotify && (e as Error).message.includes('Choose a network player')) setOutputsOpen(true); }
     finally { controlLock.current = false; setBusy(false); }
   }
   async function control(action: string, body?: object) {
@@ -164,7 +166,7 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
         if (album?.tracks.length) { setSelected(album); await startTrack(album.tracks[Math.floor(Math.random() * album.tracks.length)], album); }
       } else await api.control(action, body);
       setState(await api.state());
-    } catch (e) { setError((e as Error).message); if (e instanceof ApiError && e.status === 409 && isSpotify) setDevicesOpen(true); }
+    } catch (e) { setError((e as Error).message); if (e instanceof ApiError && e.status === 409 && isSpotify) setDevicesOpen(true); else if (!isSpotify && (e as Error).message.includes('Choose a network player')) setOutputsOpen(true); }
     finally { controlLock.current = false; setBusy(false); }
   }
 
@@ -187,10 +189,11 @@ function Library({ source, onSources, spineStyle, onSpineStyle }: { source: Sour
     </div>}
     {loading && <div className="library-loading" role="status">Loading your collection…</div>}
     {selected && <button className="album-intelligence-trigger" onClick={() => void showIntelligence()} aria-label={`Open album intelligence for ${selected.title}`}>i<span>ALBUM</span></button>}
-    <NowPlaying state={state} source={source} selectionPending={isSpotify && Boolean(selected && selected.id !== state?.albumId)} busy={busy} onControl={control} onSearch={() => setSearchOpen(true)} onTools={() => setToolsOpen(true)} onSources={onSources} filterActive={Boolean(query || activeCrate || catalogue)} spineStyle={spineStyle} onSpineStyle={onSpineStyle} />
+    <NowPlaying state={state} source={source} selectionPending={isSpotify && Boolean(selected && selected.id !== state?.albumId)} busy={busy} onControl={control} onSearch={() => setSearchOpen(true)} onTools={() => setToolsOpen(true)} onOutputs={() => isSpotify ? setDevicesOpen(true) : setOutputsOpen(true)} onSources={onSources} filterActive={Boolean(query || activeCrate || catalogue)} spineStyle={spineStyle} onSpineStyle={onSpineStyle} />
     {searchOpen && <SearchPanel query={query} onChange={changeQuery} onClose={() => setSearchOpen(false)} onSearchCatalogue={isSpotify ? () => void searchCatalogue() : undefined} onGuide={(value) => void runGuide(value)} onClearResults={catalogue || activeCrate ? () => { setCatalogue(undefined); setActiveCrate(undefined); setGuideResult(undefined); setQuery(''); setPage(0); } : undefined} guideResult={guideResult} searching={searching} />}
     {toolsOpen && <ToolsPanel source={source} selected={selected} crates={crates} activeCrate={activeCrate} environment={environment} onEnvironment={setEnvironment} onClose={() => setToolsOpen(false)} onCreateCrate={(name) => void createCrate(name)} onDeleteCrate={(id) => void deleteCrate(id)} onToggleAlbum={(value) => void toggleCrateAlbum(value)} onChooseCrate={(id) => { setActiveCrate(id); setCatalogue(undefined); setQuery(''); setPage(0); setSelected(undefined); }} />}
     {intelligenceOpen && <AlbumIntelligence data={intelligence} loading={intelligenceLoading} onClose={() => setIntelligenceOpen(false)} onSelect={(album) => void chooseRelated(album)} />}
     {devicesOpen && <SpotifyPanel onClose={() => setDevicesOpen(false)} onDisconnect={onSources} />}
+    {outputsOpen && <OutputPanel onClose={() => setOutputsOpen(false)} onChanged={() => { setState(undefined); setError(undefined); }} />}
   </main>;
 }

@@ -4,9 +4,9 @@ import type { AlbumDetail, PlaybackState } from './types.js';
 import type { WiimClient, WiimTransportState } from './wiim.js';
 import type { JellyfinClient } from './jellyfin.js';
 
-type Player = Pick<WiimClient, 'setUri' | 'setNextUri' | 'play' | 'pause' | 'stop' | 'seek' | 'setVolume' | 'setMute' | 'transportState' | 'state'>;
+type Player = Pick<WiimClient, 'setUri' | 'setNextUri' | 'play' | 'pause' | 'stop' | 'seek' | 'setVolume' | 'setMute' | 'transportState' | 'state'> & { supportsNextUri?: () => boolean | undefined };
 type Library = Pick<JellyfinClient, 'album' | 'streamUrl'>;
-interface Queue { album: AlbumDetail; index: number; prepared?: number; startingUntil: number; stoppedSince?: number }
+interface Queue { album: AlbumDetail; index: number; prepared?: number; startingUntil: number; stoppedSince?: number; library?: Library; artworkUri?: string; nativeNext?: boolean; lastTransport?: PlaybackState['transport']; lastPosition?: number; lastDuration?: number }
 
 /** The WiiM performs each transition. This server keeps its next-URI buffer
  * filled, independent of browser tabs, iPad sleep and the viewed album.
@@ -42,27 +42,31 @@ export class JellyfinPlayback {
     try {
       const current = new URL(uri);
       return queue.album.tracks.findIndex((track) => {
-        const expected = new URL(this.library.streamUrl(track.id));
+        const expected = new URL((queue.library ?? this.library).streamUrl(track.id));
         return current.origin === expected.origin && current.pathname.toLowerCase() === expected.pathname.toLowerCase();
       });
     } catch { return -1; }
   }
   private async prepare(queue: Queue) {
+    const library = queue.library ?? this.library;
     const nextIndex = queue.index + 1;
     if (queue.prepared === nextIndex) return;
     const next = queue.album.tracks[nextIndex];
-    await this.wiim.setNextUri(next ? this.library.streamUrl(next.id) : '', next, next ? this.artworkUri(queue.album.id) : '');
+    await this.wiim.setNextUri(next ? library.streamUrl(next.id) : '', next, next ? (queue.artworkUri ?? this.artworkUri(queue.album.id)) : '');
+    queue.nativeNext = this.wiim.supportsNextUri?.() !== false;
     queue.prepared = nextIndex;
     this.warning = undefined;
   }
   private async load(queue: Queue, index: number) {
+    const library = queue.library ?? this.library;
     const track = queue.album.tracks[index];
     if (!track) throw new Error('Track does not belong to album');
     // Invalidate the previous queue before any command can partially succeed.
     this.queue = undefined; clearTimeout(this.timer);
     queue.index = index; queue.prepared = undefined; queue.stoppedSince = undefined;
+    queue.lastTransport = undefined; queue.lastPosition = undefined; queue.lastDuration = undefined;
     queue.startingUntil = Date.now() + 5000;
-    await this.wiim.setUri(this.library.streamUrl(track.id), track, this.artworkUri(queue.album.id));
+    await this.wiim.setUri(library.streamUrl(track.id), track, queue.artworkUri ?? this.artworkUri(queue.album.id));
     try { await this.prepare(queue); await this.wiim.play(); }
     catch {
       await this.wiim.stop().catch(() => undefined);
@@ -73,13 +77,17 @@ export class JellyfinPlayback {
     this.warning = undefined;
     this.schedule();
   }
-  async start(albumId: string, trackId: string) {
+  async start(albumId: string, trackId: string, library: Library = this.library, artworkUri?: string) {
     return this.exclusive(async () => {
-      const album = await this.library.album(albumId);
+      const album = await library.album(albumId);
       const index = album.tracks.findIndex((track) => track.id === trackId);
       if (index < 0) throw new Error('Track does not belong to album');
-      await this.load({ album, index, startingUntil: 0 }, index);
+      await this.load({ album, index, startingUntil: 0, library, artworkUri }, index);
     });
+  }
+
+  async release() {
+    return this.exclusive(async () => { this.queue = undefined; clearTimeout(this.timer); this.warning = undefined; });
   }
 
   private observe(state: WiimTransportState): Queue | undefined {
@@ -107,7 +115,12 @@ export class JellyfinPlayback {
       if (this.closed || !this.queue) return;
       const state = await this.wiim.transportState();
       const queue = this.observe(state);
-      if (queue && (state.transport === 'PLAYING' || state.transport === 'PAUSED_PLAYBACK')) await this.prepare(queue);
+      if (!queue) return;
+      const endedWithoutNativeQueue = queue.nativeNext === false && state.transport === 'STOPPED' && queue.lastTransport === 'PLAYING'
+        && Boolean(queue.lastDuration && queue.lastPosition !== undefined && queue.lastPosition >= queue.lastDuration - 10);
+      if (endedWithoutNativeQueue && queue.index + 1 < queue.album.tracks.length) { await this.load(queue, queue.index + 1); return; }
+      queue.lastTransport = state.transport; queue.lastPosition = state.positionSeconds; queue.lastDuration = state.durationSeconds || queue.album.tracks[queue.index]?.durationSeconds;
+      if (state.transport === 'PLAYING' || state.transport === 'PAUSED_PLAYBACK') await this.prepare(queue);
     });
   }
 
@@ -124,7 +137,7 @@ export class JellyfinPlayback {
     }
     // Even when another app owns the speaker, don't forward image credentials.
     if (result.artworkUrl) {
-      try { const url = new URL(result.artworkUrl); if (url.searchParams.has('api_key')) result.artworkUrl = undefined; } catch { /* Relative SHELF artwork URL. */ }
+      try { const url = new URL(result.artworkUrl); if (['api_key', 'X-Plex-Token', 'token'].some((key) => url.searchParams.has(key))) result.artworkUrl = undefined; } catch { /* Relative SHELF artwork URL. */ }
     }
     return result;
   }
