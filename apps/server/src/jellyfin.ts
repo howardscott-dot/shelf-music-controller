@@ -22,10 +22,12 @@ interface QueryResult { Items?: JellyfinItem[]; TotalRecordCount?: number }
 interface JellyfinUser { Id: string; Name: string }
 interface ArchiveImage { image: string; thumbnails?: Record<string, string>; types?: string[]; approved?: boolean; front?: boolean; back?: boolean }
 interface ArchiveMetadata { images?: ArchiveImage[] }
+interface ArtworkMatch { release?: string; releases?: string[]; group?: string }
 
 export class JellyfinClient {
   private resolvedUserId?: string;
-  private readonly artworkMatches = new Map<string, Promise<{ release?: string; group?: string } | undefined>>();
+  private readonly artworkMatches = new Map<string, Promise<ArtworkMatch | undefined>>();
+  private readonly archiveMatches = new Map<string, Promise<ArchiveMetadata | undefined>>();
   private readonly pendingSpines = new Map<string, Promise<void>>();
   constructor(
     private readonly baseUrl: string,
@@ -106,23 +108,31 @@ export class JellyfinClient {
     return url;
   }
 
-  private async musicBrainzMatch(item: JellyfinItem): Promise<{ release?: string; group?: string } | undefined> {
+  private async musicBrainzMatch(item: JellyfinItem): Promise<ArtworkMatch | undefined> {
     const supplied = { release: item.ProviderIds?.MusicBrainzAlbum, group: item.ProviderIds?.MusicBrainzReleaseGroup };
-    if (supplied.release || supplied.group) return supplied;
     const artist = item.AlbumArtist ?? item.Artists?.[0];
-    if (!artist || artist === 'Unknown artist') return undefined;
+    if (!artist || artist === 'Unknown artist') return supplied.release || supplied.group ? supplied : undefined;
+    const display = cleanAlbumMetadata(artist, item.Name);
     const query = new URL('https://musicbrainz.org/ws/2/release/');
-    query.searchParams.set('query', `release:"${item.Name.replaceAll('"', '')}" AND artist:"${artist.replaceAll('"', '')}"`);
+    query.searchParams.set('query', `release:"${display.title.replaceAll('"', '')}" AND artist:"${display.artist.replaceAll('"', '')}"`);
     query.searchParams.set('fmt', 'json');
-    query.searchParams.set('limit', '3');
+    query.searchParams.set('limit', '8');
     const response = await musicBrainzFetch(query);
-    if (!response.ok) return undefined;
-    const result = await response.json() as { releases?: Array<{ id: string; score: number; 'release-group'?: { id: string } }> };
-    const best = result.releases?.find((release) => release.score >= 95);
-    return best ? { release: best.id, group: best['release-group']?.id } : undefined;
+    if (!response.ok) return supplied.release || supplied.group ? supplied : undefined;
+    const result = await response.json() as { releases?: Array<{ id: string; score: number; status?: string; media?: Array<{ format?: string }>; 'release-group'?: { id: string } }> };
+    const candidates = (result.releases ?? []).filter((release) => release.score >= 95).sort((left, right) => {
+      const cd = (release: typeof left) => release.media?.some((medium) => medium.format?.toLocaleLowerCase().includes('cd')) ? 1 : 0;
+      const official = (release: typeof left) => release.status === 'Official' ? 1 : 0;
+      return cd(right) - cd(left) || official(right) - official(left) || right.score - left.score;
+    });
+    const best = candidates[0];
+    if (!best) return supplied.release || supplied.group ? supplied : undefined;
+    // Text matching is authoritative here: Jellyfin libraries can contain a
+    // stale MusicBrainz ID copied from a different album.
+    return { release: best.id, releases: candidates.map((release) => release.id), group: best['release-group']?.id };
   }
 
-  private artworkMatch(item: JellyfinItem): Promise<{ release?: string; group?: string } | undefined> {
+  private artworkMatch(item: JellyfinItem): Promise<ArtworkMatch | undefined> {
     const existing = this.artworkMatches.get(item.Id);
     if (existing) return existing;
     const pending = this.musicBrainzMatch(item).catch(() => undefined);
@@ -143,19 +153,30 @@ export class JellyfinClient {
     return undefined;
   }
 
-  private async archiveMetadata(item: JellyfinItem, type: 'Back' | 'Spine'): Promise<ArchiveMetadata | undefined> {
+  private async findArchiveMetadata(item: JellyfinItem, type: 'Back' | 'Spine'): Promise<ArchiveMetadata | undefined> {
     const match = await this.artworkMatch(item);
-    for (const [kind, id] of [['release', match?.release], ['release-group', match?.group]] as const) {
-      if (!id) continue;
+    const releases = [...new Set([...(match?.releases ?? []), match?.release].filter((id): id is string => Boolean(id)))].slice(0, 8);
+    const targets: Array<readonly ['release' | 'release-group', string]> = releases.map((id) => ['release', id] as const);
+    if (match?.group) targets.push(['release-group', match.group]);
+    const results = await Promise.all(targets.map(async ([kind, id]) => {
       const response = await fetch(`https://coverartarchive.org/${kind}/${encodeURIComponent(id)}`, {
         headers: { Accept: 'application/json', 'User-Agent': 'SHELF/0.1 (self-hosted music controller)' },
         signal: AbortSignal.timeout(12_000)
       });
-      if (!response.ok) continue;
+      if (!response.ok) return undefined;
       const metadata = await response.json() as ArchiveMetadata;
-      if (this.selectPackagingImage(metadata, type)) return metadata;
-    }
-    return undefined;
+      return this.selectPackagingImage(metadata, type) ? metadata : undefined;
+    }));
+    return results.find((metadata) => metadata !== undefined);
+  }
+
+  private archiveMetadata(item: JellyfinItem, type: 'Back' | 'Spine'): Promise<ArchiveMetadata | undefined> {
+    const key = `${item.Id}:${type}`;
+    const existing = this.archiveMatches.get(key);
+    if (existing) return existing;
+    const pending = this.findArchiveMetadata(item, type).catch(() => undefined);
+    this.archiveMatches.set(key, pending);
+    return pending;
   }
 
   private selectPackagingImage(metadata: ArchiveMetadata | undefined, type: 'Back' | 'Spine'): ArchiveImage | undefined {

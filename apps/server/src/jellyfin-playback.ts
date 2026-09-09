@@ -6,7 +6,7 @@ import type { JellyfinClient } from './jellyfin.js';
 
 type Player = Pick<WiimClient, 'setUri' | 'setNextUri' | 'play' | 'pause' | 'stop' | 'seek' | 'setVolume' | 'setMute' | 'transportState' | 'state'> & { supportsNextUri?: () => boolean | undefined };
 type Library = Pick<JellyfinClient, 'album' | 'streamUrl'>;
-interface Queue { album: AlbumDetail; index: number; prepared?: number; startingUntil: number; stoppedSince?: number; library?: Library; artworkUri?: string; nativeNext?: boolean; lastTransport?: PlaybackState['transport']; lastPosition?: number; lastDuration?: number }
+interface Queue { album: AlbumDetail; index: number; prepared?: number; startingUntil: number; stoppedSince?: number; naturalEndSince?: number; library?: Library; artworkUri?: string; nativeNext?: boolean; lastTransport?: PlaybackState['transport']; lastPosition?: number; lastDuration?: number }
 
 /** The WiiM performs each transition. This server keeps its next-URI buffer
  * filled, independent of browser tabs, iPad sleep and the viewed album.
@@ -63,7 +63,7 @@ export class JellyfinPlayback {
     if (!track) throw new Error('Track does not belong to album');
     // Invalidate the previous queue before any command can partially succeed.
     this.queue = undefined; clearTimeout(this.timer);
-    queue.index = index; queue.prepared = undefined; queue.stoppedSince = undefined;
+    queue.index = index; queue.prepared = undefined; queue.stoppedSince = undefined; queue.naturalEndSince = undefined;
     queue.lastTransport = undefined; queue.lastPosition = undefined; queue.lastDuration = undefined;
     queue.startingUntil = Date.now() + 5000;
     await this.wiim.setUri(library.streamUrl(track.id), track, queue.artworkUri ?? this.artworkUri(queue.album.id));
@@ -104,7 +104,7 @@ export class JellyfinPlayback {
     }
     if (index !== queue.index && index !== queue.index + 1 && Date.now() < queue.startingUntil) return undefined;
     queue.startingUntil = 0;
-    if (index !== queue.index) { queue.index = index; queue.prepared = undefined; }
+    if (index !== queue.index) { queue.index = index; queue.prepared = undefined; queue.naturalEndSince = undefined; }
     if (state.transport === 'STOPPED') queue.stoppedSince ??= Date.now();
     else queue.stoppedSince = undefined;
     return queue;
@@ -116,9 +116,16 @@ export class JellyfinPlayback {
       const state = await this.wiim.transportState();
       const queue = this.observe(state);
       if (!queue) return;
-      const endedWithoutNativeQueue = queue.nativeNext === false && state.transport === 'STOPPED' && queue.lastTransport === 'PLAYING'
+      const stoppedAtNaturalEnd = state.transport === 'STOPPED' && queue.lastTransport === 'PLAYING'
         && Boolean(queue.lastDuration && queue.lastPosition !== undefined && queue.lastPosition >= queue.lastDuration - 10);
-      if (endedWithoutNativeQueue && queue.index + 1 < queue.album.tracks.length) { await this.load(queue, queue.index + 1); return; }
+      if (stoppedAtNaturalEnd) queue.naturalEndSince ??= Date.now();
+      if (state.transport !== 'STOPPED') queue.naturalEndSince = undefined;
+      // Some Linkplay/WiiM firmware accepts SetNextAVTransportURI but does not
+      // actually consume it for every HTTP stream. Give a genuine native
+      // transition a short window, then safely advance the server-owned album.
+      const nativeTransitionMissed = queue.naturalEndSince !== undefined
+        && (queue.nativeNext === false || Date.now() - queue.naturalEndSince >= 2500);
+      if (nativeTransitionMissed && queue.index + 1 < queue.album.tracks.length) { await this.load(queue, queue.index + 1); return; }
       queue.lastTransport = state.transport; queue.lastPosition = state.positionSeconds; queue.lastDuration = state.durationSeconds || queue.album.tracks[queue.index]?.durationSeconds;
       if (state.transport === 'PLAYING' || state.transport === 'PAUSED_PLAYBACK') await this.prepare(queue);
     });

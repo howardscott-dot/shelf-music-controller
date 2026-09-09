@@ -133,6 +133,16 @@ describe('continuous Jellyfin album playback', () => {
     current.positionSeconds = 179; await playback.tick(); current.transport = 'STOPPED'; current.positionSeconds = 0; await playback.tick();
     expect(current.trackUri).toBe(url(album.tracks[1]!.id)); expect(wiim.play).toHaveBeenCalledTimes(2);
   });
+  it('recovers when a renderer accepts the next URI but silently stops instead of using it', async () => {
+    await playback.start(album.id, album.tracks[0]!.id);
+    current.positionSeconds = 179; await playback.tick();
+    // The renderer advertised and accepted native queuing, then discarded it.
+    next = ''; current.transport = 'STOPPED'; current.positionSeconds = 0; await playback.tick();
+    expect(wiim.setUri).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(current.trackUri).toBe(url(album.tracks[1]!.id));
+    expect(wiim.setUri).toHaveBeenCalledTimes(2); expect(wiim.play).toHaveBeenCalledTimes(2);
+  });
   it('validates membership before changing playback', async () => {
     await expect(playback.start(album.id, '4'.repeat(32))).rejects.toThrow('belong');
     expect(wiim.setUri).not.toHaveBeenCalled();
