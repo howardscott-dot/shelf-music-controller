@@ -136,6 +136,13 @@ describe('Spotify shelf and footer', () => {
     await act(async () => root.render(<Shelf albums={[localAlbum]} selected={localAlbum} onSelect={() => {}} onClose={() => {}} onPlay={() => {}} />));
     expect(container.querySelector('.cover-front img')).toBeTruthy(); expect(container.querySelector('.cover-flip')).toBeTruthy(); expect(container.querySelector('.cover-play')).toBeTruthy();
   });
+  it('builds valid front-cover URLs for mounted files without inventing a back cover', async () => {
+    const fileAlbum = { ...album, source: 'files' as const, artworkUrl: '/api/files/artwork/local', backArtworkUrl: '' };
+    await act(async () => root.render(<Shelf albums={[fileAlbum]} selected={fileAlbum} onSelect={() => {}} onClose={() => {}} onPlay={() => {}} />));
+    expect(container.querySelector('.cover-front img')?.getAttribute('src')).toBe('/api/files/artwork/local?v=5');
+    expect(container.querySelector('.cover-back img')).toBeNull();
+    expect(container.querySelector('.cover-flip')?.getAttribute('title')).toBe('No genuine back-cover scan found');
+  });
 });
 
 describe('local network outputs', () => {

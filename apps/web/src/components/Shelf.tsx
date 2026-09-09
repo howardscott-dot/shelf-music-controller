@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AlbumDetail, AlbumSummary, PlaybackState, SpineStyle, Track } from '../types';
-import { hashHue } from '../utils';
+import { hashHue, versionedArtwork } from '../utils';
 import { CassetteCover, CassetteSpine } from './Cassette';
 import { useCassetteArtwork } from '../cassette-art';
 import { PlayingMedia } from './PlayingMedia';
@@ -69,12 +69,12 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
               {selected.artworkUrl ? <img src={selected.artworkUrl} alt={`${selected.title} cover`} draggable={false} /> : <span>{selected.title}<br />{selected.artist}</span>}
             </button>;
             const flipped = flippedAlbumId === selected.id;
-            const backReady = backReadyFor === selected.id;
-            const backUnavailable = backUnavailableFor === selected.id;
+            const backReady = Boolean(selected.backArtworkUrl) && backReadyFor === selected.id;
+            const backUnavailable = !selected.backArtworkUrl || backUnavailableFor === selected.id;
             return <article key={album.id} className={`expanded-album ${flipped ? 'flipped' : ''}`} style={{ left: leftFor(index), width: openSize }} onClick={() => { if (!moved.current) onClose(); }} aria-label={`${selected.title} by ${selected.artist}. Tap to close.`}>
             <div className="cover-card">
-              <div className="cover-face cover-front"><img src={`${selected.artworkUrl}&v=5`} alt={`${selected.title} front cover`} draggable={false} /></div>
-              <div className="cover-face cover-back">{!backUnavailable && <img src={`${selected.backArtworkUrl}&v=6`} alt={`${selected.title} back cover`} draggable={false} ref={(image) => { if (image?.complete && image.naturalWidth > 0 && backReadyFor !== selected.id) setBackReadyFor(selected.id); }} onLoad={() => { setBackReadyFor(selected.id); setBackUnavailableFor((id) => id === selected.id ? undefined : id); }} onError={() => { setBackReadyFor(undefined); setBackUnavailableFor(selected.id); setFlippedAlbumId(undefined); }} />}</div>
+              <div className="cover-face cover-front"><img src={versionedArtwork(selected.artworkUrl, 5)} alt={`${selected.title} front cover`} draggable={false} /></div>
+              <div className="cover-face cover-back">{!backUnavailable && <img src={versionedArtwork(selected.backArtworkUrl, 6)} alt={`${selected.title} back cover`} draggable={false} ref={(image) => { if (image?.complete && image.naturalWidth > 0 && backReadyFor !== selected.id) setBackReadyFor(selected.id); }} onLoad={() => { setBackReadyFor(selected.id); setBackUnavailableFor((id) => id === selected.id ? undefined : id); }} onError={() => { setBackReadyFor(undefined); setBackUnavailableFor(selected.id); setFlippedAlbumId(undefined); }} />}</div>
             </div>
             <button className={`cover-flip ${!backReady && !backUnavailable ? 'loading' : ''} ${backUnavailable ? 'unavailable' : ''}`} disabled={!backReady} aria-label={flipped ? `Show the front cover of ${selected.title}` : backUnavailable ? `Back cover unavailable for ${selected.title}` : `Show the back cover of ${selected.title}`} title={flipped ? 'Front cover' : backUnavailable ? 'No genuine back-cover scan found' : backReady ? 'Back cover' : 'Finding back cover'} onClick={(event) => { event.stopPropagation(); setFlippedAlbumId(flipped ? undefined : selected.id); }}>↻</button>
             <button className="cover-play" disabled={!selected.tracks.length} aria-label={`Play ${selected.title}`} onClick={(event) => { event.stopPropagation(); if (selected.tracks[0]) onPlay(selected.tracks[0]); }}>▶</button>

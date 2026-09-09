@@ -10,3 +10,8 @@ export function hashHue(value: string): number {
   for (const character of value) hash = (hash * 31 + character.charCodeAt(0)) | 0;
   return Math.abs(hash) % 360;
 }
+
+export function versionedArtwork(url: string, version: number): string {
+  if (!url) return '';
+  return `${url}${url.includes('?') ? '&' : '?'}v=${version}`;
+}

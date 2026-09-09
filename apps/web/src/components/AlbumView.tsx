@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AlbumDetail, Track } from '../types';
-import { time } from '../utils';
+import { time, versionedArtwork } from '../utils';
 
 export function AlbumView({ album, loading, onClose, onPlay }: { album?: AlbumDetail; loading: boolean; onClose: () => void; onPlay: (track: Track) => void }) {
   const [backUnavailable, setBackUnavailable] = useState(false);
@@ -11,11 +11,11 @@ export function AlbumView({ album, loading, onClose, onPlay }: { album?: AlbumDe
     <section className="album-view">
       <button className="close" onClick={onClose} aria-label="Close album">×</button>
       <div className="open-jewel-case" aria-label={`${album.title} open CD case`}>
-        <div className="case-panel case-front"><img src={`${album.artworkUrl}&v=4`} alt={`${album.title} front cover`} /></div>
+        <div className="case-panel case-front"><img src={versionedArtwork(album.artworkUrl, 4)} alt={`${album.title} front cover`} /></div>
         <div className="case-hinge" aria-hidden="true" />
         <div className="case-panel case-back">
-          {!backUnavailable
-            ? <img src={`${album.backArtworkUrl}&v=4`} alt={`${album.title} back cover`} onError={() => setBackUnavailable(true)} />
+          {!backUnavailable && album.backArtworkUrl
+            ? <img src={versionedArtwork(album.backArtworkUrl, 4)} alt={`${album.title} back cover`} onError={() => setBackUnavailable(true)} />
             : <div className="art-unavailable"><span>BACK ART</span><small>NOT ARCHIVED</small></div>}
         </div>
       </div>
