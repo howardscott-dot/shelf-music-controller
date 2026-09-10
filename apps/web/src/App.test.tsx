@@ -127,6 +127,16 @@ describe('Spotify shelf and footer', () => {
     await click(container.querySelector('[aria-label="Toggle Spotify shuffle"]'));
     expect(mock.control).toHaveBeenCalledWith('shuffle', { enabled: true });
   });
+  it('keeps the playing album artwork in the footer while another album is selected', async () => {
+    const playing = { ...album, id: 'playing', title: 'Playing now', thumbnailUrl: '/playing-thumb.jpg' };
+    const browsing = { ...album, id: 'browsing', title: 'Browsing next', thumbnailUrl: '/browsing-thumb.jpg' };
+    mock.albums.mockResolvedValue({ items: [playing, browsing], total: 2 });
+    mock.album.mockResolvedValue({ ...browsing, tracks: album.tracks });
+    mock.state.mockResolvedValue({ transport: 'PLAYING', albumId: playing.id, trackId: 'playing-track', title: 'Current song', artist: playing.artist, album: playing.title, artworkUrl: '/playing-full.jpg', positionSeconds: 20, durationSeconds: 180, volume: 50, muted: false });
+    await render(); await click(button('Spotify')); await click(container.querySelectorAll('.spine')[1]);
+    expect(container.querySelector('.now-art img')?.getAttribute('src')).toBe('/playing-thumb.jpg');
+    expect(container.querySelector('.now-copy strong')?.textContent).toBe('Current song');
+  });
   it('chooses a device without playing, and maintains accessible large buttons', async () => {
     await render(); await click(button('Spotify')); await click(button('DEVICES'));
     expect(container.querySelector('dialog')?.open).toBe(true);
@@ -207,21 +217,29 @@ describe('guide, album intelligence and quiet shelf tools', () => {
   });
 });
 
-describe('CD and tape appearance', () => {
-  it('defaults to CDs and remembers a tape choice from launch', async () => {
+describe('CD, tape and cover appearance', () => {
+  it('defaults to CDs and remembers tape and cover choices from launch', async () => {
     await render();
     expect(button('CD SPINES')?.getAttribute('aria-pressed')).toBe('true');
     await click(button('TAPES'));
     expect(window.localStorage.getItem('shelf.spine-style')).toBe('tape');
+    await click(button('COVERS'));
+    expect(window.localStorage.getItem('shelf.spine-style')).toBe('covers');
     await click(button('Spotify'));
-    expect(container.querySelector('.shelf-wrap')?.getAttribute('data-spine-style')).toBe('tape');
-    expect(container.querySelector('.tape-spine')).toBeTruthy();
-    expect(container.querySelector('.tape-spine')?.getAttribute('style')).not.toContain('url(');
+    expect(container.querySelector('.covers-browser')?.getAttribute('data-spine-style')).toBe('covers');
+    expect(container.querySelector('.cover-tile')).toBeTruthy();
     expect(mock.control).not.toHaveBeenCalled();
   });
+  it('starts an older iPad in the lightweight cover view when it has no saved choice', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPad; CPU OS 15_8 like Mac OS X)');
+    vi.spyOn(window.screen, 'width', 'get').mockReturnValue(768);
+    vi.spyOn(window.screen, 'height', 'get').mockReturnValue(1024);
+    await render();
+    expect(button('COVERS')?.getAttribute('aria-pressed')).toBe('true');
+  });
   it('restores the style across a new visit, with CD fallback for invalid preferences', async () => {
-    window.localStorage.setItem('shelf.spine-style', 'tape');
-    await render(); expect(button('TAPES')?.getAttribute('aria-pressed')).toBe('true');
+    window.localStorage.setItem('shelf.spine-style', 'covers');
+    await render(); expect(button('COVERS')?.getAttribute('aria-pressed')).toBe('true');
     await act(async () => root.render(null));
     window.localStorage.setItem('shelf.spine-style', 'unknown');
     await render(); expect(button('CD SPINES')?.getAttribute('aria-pressed')).toBe('true');
@@ -230,7 +248,7 @@ describe('CD and tape appearance', () => {
     await render(); await click(button('Spotify')); await click(container.querySelector('.spine'));
     const cover = container.querySelector('.expanded-album') as HTMLElement;
     const width = cover.style.width;
-    await click(container.querySelector('[aria-label="Tape spine view"]'));
+    await click(container.querySelector('.footer-format'));
     expect(container.querySelector('.expanded-album')).toBe(cover);
     expect(cover.style.width).toBe(width);
     expect(container.querySelector('.spotify-album img')?.getAttribute('src')).toBe(album.artworkUrl);
@@ -245,16 +263,69 @@ describe('CD and tape appearance', () => {
     await render(); await click(button('Spotify'));
     const shelf = container.querySelector('.shelf') as HTMLElement;
     await act(async () => { shelf.scrollLeft = 220; shelf.dispatchEvent(new Event('scroll')); });
-    await click(container.querySelector('[aria-label="Tape spine view"]'));
+    await click(container.querySelector('.footer-format'));
     expect(shelf.scrollLeft).toBe(320);
-    await click(container.querySelector('[aria-label="Tape spine view"]'));
-    expect(shelf.scrollLeft).toBe(220);
+    await click(container.querySelector('.footer-format'));
+    expect(container.querySelectorAll('.cover-tile')).toHaveLength(10);
+    await click(container.querySelector('.footer-format'));
+    expect(container.querySelector('.shelf')).toBeTruthy();
   });
   it('still switches styles if browser storage is unavailable', async () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage blocked'); });
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage blocked'); });
     await render(); await click(button('TAPES')); await click(button('Spotify'));
     expect(container.querySelector('.tape-shelf')).toBeTruthy();
+  });
+  it('renders only one lightweight cover page and opens a static selected cover', async () => {
+    const items = Array.from({ length: 23 }, (_, i) => ({ ...album, source: 'jellyfin' as const, id: String(i), title: `Album ${i}`, thumbnailUrl: `/thumb/${i}` }));
+    mock.albums.mockResolvedValue({ items, total: items.length });
+    mock.album.mockImplementation(async (id: string) => ({ ...items[Number(id)]!, tracks: album.tracks, durationSeconds: 180 }));
+    await render(); await click(button('COVERS')); await click(button('Jellyfin'));
+    expect(container.querySelectorAll('.cover-tile')).toHaveLength(10);
+    expect(container.querySelector('.cover-tile img')?.getAttribute('src')).toBe('/thumb/0');
+    expect(container.textContent).toContain('Album 0'); expect(container.textContent).not.toContain('Album 10');
+    await click(container.querySelector('[aria-label="Next album page"]'));
+    expect(container.querySelectorAll('.cover-tile')).toHaveLength(10);
+    expect(container.textContent).toContain('Album 10'); expect(container.textContent).toContain('11–20 / 23');
+    await click(container.querySelector('.cover-tile'));
+    expect(container.querySelector('.covers-focus')).toBeTruthy();
+    expect(container.querySelector('.active-media-player')).toBeNull();
+    expect(container.querySelector('.cd-disc')).toBeNull(); expect(container.querySelector('.playing-cassette')).toBeNull();
+    await click(container.querySelector('[aria-label="Play selected album"]'));
+    expect(mock.playTrack).toHaveBeenCalledWith(album.tracks[0]!.id, '10');
+  });
+  it('loads the first cover page progressively and preserves a later selection when returning to CDs', async () => {
+    const items = Array.from({ length: 25 }, (_, i) => ({ ...album, id: String(i), title: `Album ${i}`, thumbnailUrl: `/thumb/${i}` }));
+    mock.albums.mockResolvedValue({ items, total: items.length });
+    mock.album.mockImplementation(async (id: string) => ({ ...items[Number(id)]!, tracks: album.tracks, durationSeconds: 180 }));
+    await render(); await click(button('COVERS')); await click(button('Spotify'));
+    expect(mock.albums.mock.calls[0]?.[0]?.firstPageSize).toBe(10);
+    expect(typeof mock.albums.mock.calls[0]?.[0]?.onFirstPage).toBe('function');
+    expect(mock.albums.mock.calls[0]?.[0]?.signal).toBeInstanceOf(AbortSignal);
+    await click(container.querySelector('[aria-label="Next album page"]'));
+    await click(container.querySelector('[aria-label="Next album page"]'));
+    await click(container.querySelector('.cover-tile'));
+    expect(container.textContent).toContain('Album 20');
+    await click(container.querySelector('.footer-format'));
+    expect(container.querySelector('.spotify-album')).toBeTruthy();
+    expect(container.querySelector('.spotify-album')?.getAttribute('aria-label')).toContain('Album 20');
+  });
+  it('locks cover-page controls while the next Spotify search page is loading', async () => {
+    const first = Array.from({ length: 10 }, (_, i) => ({ ...album, id: String(i), title: `Result ${i}` }));
+    const second = Array.from({ length: 10 }, (_, i) => ({ ...album, id: String(i + 10), title: `Result ${i + 10}` }));
+    let finish!: (value: { items: typeof second; total: number }) => void;
+    mock.search.mockResolvedValueOnce({ items: first, total: 20 }).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await render(); await click(button('COVERS')); await click(button('Spotify'));
+    await click(container.querySelector('[aria-label="Search albums"]'));
+    await click([...container.querySelectorAll('.key-row button')].find((item) => item.textContent === 'A'));
+    await click(button('SEARCH SPOTIFY CATALOGUE'));
+    const next = container.querySelector('[aria-label="Next album page"]') as HTMLButtonElement;
+    await click(next);
+    expect(next.disabled).toBe(true);
+    next.click();
+    expect(mock.search).toHaveBeenCalledTimes(2);
+    await act(async () => finish({ items: second, total: 20 }));
+    expect(container.textContent).toContain('Result 10');
   });
   it('preserves Jellyfin front/back controls and adds tape labels without changing metadata', async () => {
     const localAlbum = { ...album, source: 'jellyfin' as const, artworkUrl: '/api/artwork/local?width=1200', backArtworkUrl: '/api/artwork/local?side=back' };
@@ -310,7 +381,9 @@ describe('genuine cassette scans', () => {
     mock.cassette.mockReturnValue(artwork);
     await render(); await click(button('TAPES')); await click(button('Spotify')); await click(container.querySelector('.spine'));
     expect(container.querySelector('.cassette-album')).toBeTruthy();
-    await click(container.querySelector('[aria-label="Tape spine view"]'));
+    await click(container.querySelector('.footer-format'));
+    expect(container.querySelector('.covers-focus')).toBeTruthy();
+    await click(container.querySelector('.footer-format'));
     expect(container.querySelector('.spotify-album img')?.getAttribute('src')).toBe(album.artworkUrl);
     expect(mock.album).toHaveBeenCalledTimes(1); expect(mock.playTrack).not.toHaveBeenCalled(); expect(mock.control).not.toHaveBeenCalled();
   });

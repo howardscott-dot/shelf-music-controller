@@ -4,6 +4,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, opendir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, relative, resolve, sep } from 'node:path';
 import { parseFile } from 'music-metadata';
+import sharp from 'sharp';
 import type { AlbumDetail, AlbumSummary, Track } from './types.js';
 import { z } from 'zod';
 
@@ -32,6 +33,7 @@ export class FileLibrary {
   private scannedAt = 0;
   private scanning?: Promise<void>;
   private cacheLoaded = false;
+  private artworkPreviews = new Map<string, Promise<{ data: Buffer; type: string } | undefined>>();
   constructor(private readonly root?: string, private readonly publicUrl?: string, private readonly cacheFile?: string) {}
   get configured() { return Boolean(this.root && this.publicUrl); }
   async status() {
@@ -129,15 +131,16 @@ export class FileLibrary {
   async albums(start = 0, limit = 100) {
     await this.ensure();
     const all = [...this.albumsById.values()].sort((a, b) => a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title));
-    return { items: all.slice(start, start + limit).map(this.summary), total: all.length };
+    return { items: all.slice(start, start + limit).map((album) => this.summary(album)), total: all.length };
   }
-  private summary(album: LocalAlbum): AlbumSummary { const { tracks: _tracks, localTracks: _local, durationSeconds: _duration, folder: _folder, ...summary } = album; return summary; }
-  async album(id: string) { await this.ensure(); const album = this.albumsById.get(id); if (!album) throw new Error('Album not found in the mounted music folder.'); const { localTracks: _local, folder: _folder, ...view } = album; return view; }
+  private thumbnailUrl(id: string) { return `/api/files/artwork/${encodeURIComponent(id)}?width=360`; }
+  private summary(album: LocalAlbum): AlbumSummary { const { tracks: _tracks, localTracks: _local, durationSeconds: _duration, folder: _folder, ...summary } = album; return { ...summary, thumbnailUrl: this.thumbnailUrl(album.id) }; }
+  async album(id: string) { await this.ensure(); const album = this.albumsById.get(id); if (!album) throw new Error('Album not found in the mounted music folder.'); const { localTracks: _local, folder: _folder, ...view } = album; return { ...view, thumbnailUrl: this.thumbnailUrl(album.id) }; }
   streamUrl(trackId: string) { if (!this.tracksById.has(trackId)) throw new Error('Track not found in the mounted music folder.'); return this.public(`/api/files/audio/${encodeURIComponent(trackId)}`); }
   playerArtworkUrl(albumId: string) { return this.public(`/api/files/artwork/${encodeURIComponent(albumId)}`); }
   async trackFile(id: string) { await this.ensure(); const track = this.tracksById.get(id); if (!track) throw new Error('Track not found.'); return track.file; }
-  async artwork(id: string): Promise<{ data: Buffer; type: string } | undefined> {
-    await this.ensure(); const album = this.albumsById.get(id); if (!album) return undefined;
+  private async originalArtwork(id: string): Promise<{ data: Buffer; type: string } | undefined> {
+    const album = this.albumsById.get(id); if (!album) return undefined;
     try {
       const names = await readdir(album.folder); const preferred = imageNames.find((candidate) => names.some((name) => name.toLocaleLowerCase() === candidate));
       const actual = preferred && names.find((name) => name.toLocaleLowerCase() === preferred);
@@ -150,7 +153,27 @@ export class FileLibrary {
     } catch { /* no artwork */ }
     return undefined;
   }
-  async refresh() { await this.ensure(true); return { ok: true, albums: this.albumsById.size }; }
+  async artwork(id: string, width?: number): Promise<{ data: Buffer; type: string } | undefined> {
+    await this.ensure();
+    if (!width) return this.originalArtwork(id);
+    const safeWidth = Math.max(64, Math.min(640, Math.round(width)));
+    const key = `${id}:${safeWidth}`;
+    const cached = this.artworkPreviews.get(key);
+    if (cached) return cached;
+    const preview = (async () => {
+      const original = await this.originalArtwork(id);
+      if (!original) return undefined;
+      try {
+        return { data: await sharp(original.data, { limitInputPixels: 40_000_000 }).autoOrient().resize({ width: safeWidth, height: safeWidth, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 84, mozjpeg: true }).toBuffer(), type: 'image/jpeg' };
+      } catch { return undefined; }
+    })();
+    if (this.artworkPreviews.size >= 80) this.artworkPreviews.delete(this.artworkPreviews.keys().next().value!);
+    this.artworkPreviews.set(key, preview);
+    const result = await preview;
+    if (!result) this.artworkPreviews.delete(key);
+    return result;
+  }
+  async refresh() { await this.ensure(true); this.artworkPreviews.clear(); return { ok: true, albums: this.albumsById.size }; }
 }
 
 const mime = (file: string) => ({ '.flac': 'audio/flac', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.aif': 'audio/aiff', '.aiff': 'audio/aiff', '.wma': 'audio/x-ms-wma', '.alac': 'audio/mp4', '.ape': 'audio/ape', '.mpc': 'audio/musepack', '.dsf': 'audio/dsd', '.dff': 'audio/dsd' }[extname(file).toLowerCase()] ?? 'application/octet-stream');
@@ -165,7 +188,7 @@ export async function fileLibraryRoutes(app: FastifyInstance, { library, playbac
   app.post('/refresh', async () => library.refresh());
   app.get('/albums', async (request) => { const query = request.query as { start?: string; limit?: string }; return library.albums(Number(query.start ?? 0), Math.min(200, Number(query.limit ?? 100))); });
   app.get('/albums/:id', async (request) => library.album((request.params as { id: string }).id));
-  app.get('/artwork/:id', async (request, reply) => { const art = await library.artwork((request.params as { id: string }).id); if (!art) return reply.code(404).send({ error: 'Artwork unavailable' }); reply.header('Content-Type', art.type); reply.header('Cache-Control', 'public, max-age=86400'); return reply.send(art.data); });
+  app.get('/artwork/:id', async (request, reply) => { const requested = Number((request.query as { width?: string }).width); const width = Number.isFinite(requested) && requested > 0 ? requested : undefined; const art = await library.artwork((request.params as { id: string }).id, width); if (!art) return reply.code(404).send({ error: 'Artwork unavailable' }); reply.header('Content-Type', art.type); reply.header('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800'); return reply.send(art.data); });
   app.get('/audio/:id', async (request, reply) => {
     const file = await library.trackFile((request.params as { id: string }).id);
     const info = await stat(file); const range = request.headers.range;

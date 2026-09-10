@@ -15,7 +15,7 @@ let root: Root;
 
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
-async function render(media: SpineStyle, playback: PlaybackState = base, onClose = vi.fn()) { await act(async () => root.render(<PlayingMedia album={album} playback={playback} media={media} left={100} size={400} onClose={onClose} />)); return onClose; }
+async function render(media: Exclude<SpineStyle, 'covers'>, playback: PlaybackState = base, onClose = vi.fn()) { await act(async () => root.render(<PlayingMedia album={album} playback={playback} media={media} left={100} size={400} onClose={onClose} />)); return onClose; }
 
 describe('active media player', () => {
   it('turns the playing album into a full-height transparent CD player', async () => {

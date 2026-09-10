@@ -11,7 +11,7 @@ it('reads albums and playable track parts from the documented Plex JSON API with
     return json({ MediaContainer: { Metadata: [{ ratingKey: '10', title: 'Album', parentTitle: 'Artist', thumb: '/library/metadata/10/thumb', year: 1997 }] } });
   });
   const plex = new PlexClient('http://plex.local:32400', 'private-token', undefined, fetcher);
-  expect((await plex.albums()).items[0]).toMatchObject({ source: 'plex', id: '10', title: 'Album', artist: 'Artist' });
+  expect((await plex.albums()).items[0]).toMatchObject({ source: 'plex', id: '10', title: 'Album', artist: 'Artist', thumbnailUrl: '/api/plex/artwork/10?width=360' });
   const album = await plex.album('10'); expect(album.tracks[0]).toMatchObject({ id: '11', title: 'Track', durationSeconds: 123 });
   expect(album.artworkUrl).not.toContain('private-token');
   expect(plex.streamUrl('11')).toContain('/library/parts/99/file.flac'); expect(plex.streamUrl('11')).toContain('X-Plex-Token=private-token');

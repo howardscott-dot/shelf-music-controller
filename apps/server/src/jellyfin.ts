@@ -71,7 +71,7 @@ export class JellyfinClient {
         const display = cleanAlbumMetadata(item.AlbumArtist ?? item.Artists?.[0] ?? 'Unknown artist', item.Name);
         return {
           id: item.Id, title: display.title, artist: display.artist,
-          year: item.ProductionYear, genres: item.Genres ?? [], artworkUrl: this.artworkPath(item.Id, 900),
+          year: item.ProductionYear, genres: item.Genres ?? [], artworkUrl: this.artworkPath(item.Id, 900), thumbnailUrl: this.artworkPath(item.Id, 360),
           backArtworkUrl: `/api/artwork/${encodeURIComponent(item.Id)}?side=back&width=1200`,
           spineUrl: `/api/spines/${encodeURIComponent(item.Id)}?v=5`
         };
@@ -98,7 +98,7 @@ export class JellyfinClient {
     const display = cleanAlbumMetadata(item.AlbumArtist ?? item.Artists?.[0] ?? 'Unknown artist', item.Name);
     return {
       id: item.Id, title: display.title, artist: display.artist,
-      year: item.ProductionYear, genres: item.Genres ?? [], artworkUrl: this.artworkPath(item.Id, 900),
+      year: item.ProductionYear, genres: item.Genres ?? [], artworkUrl: this.artworkPath(item.Id, 900), thumbnailUrl: this.artworkPath(item.Id, 360),
       backArtworkUrl: `/api/artwork/${encodeURIComponent(item.Id)}?side=back&width=1200`,
       spineUrl: `/api/spines/${encodeURIComponent(item.Id)}?v=5`, tracks: mapped,
       durationSeconds: mapped.reduce((sum, track) => sum + track.durationSeconds, 0)

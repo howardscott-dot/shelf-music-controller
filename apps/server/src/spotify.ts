@@ -161,8 +161,12 @@ export class SpotifyClient {
   async disconnect() { await this.ready; this.data = {}; this.pending.clear(); this.clearCaches(); await this.save(); }
 
   private summary(album: SpotifyAlbum): AlbumSummary {
+    const thumbnail = album.images.reduce<(typeof album.images)[number] | undefined>((closest, image) => {
+      if (!closest) return image;
+      return Math.abs((image.width ?? 640) - 300) < Math.abs((closest.width ?? 640) - 300) ? image : closest;
+    }, undefined);
     return { source: 'spotify', id: album.id, title: album.name, artist: album.artists.map((artist) => artist.name).join(', '),
-      year: album.release_date ? Number(album.release_date.slice(0, 4)) : undefined, genres: [], artworkUrl: album.images[0]?.url ?? '',
+      year: album.release_date ? Number(album.release_date.slice(0, 4)) : undefined, genres: [], artworkUrl: album.images[0]?.url ?? '', thumbnailUrl: thumbnail?.url,
       backArtworkUrl: '', spineUrl: '', externalUrl: `https://open.spotify.com/album/${album.id}` };
   }
 

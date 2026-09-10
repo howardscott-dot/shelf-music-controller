@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { AlbumDetail, PlaybackState, SpineStyle } from '../types';
 
+type PhysicalMediaStyle = Exclude<SpineStyle, 'covers'>;
+
 const TAPE_SKINS = [
   { id: 'cyan', accent: '#55ced9' },
   { id: 'amber', accent: '#d5a351' },
@@ -23,7 +25,7 @@ function chooseTapeSkin() {
   return TAPE_SKINS[index];
 }
 
-export function PlayingMedia({ album, playback, media, left, size, onClose }: { album: AlbumDetail; playback: PlaybackState; media: SpineStyle; left: number; size: number; onClose: () => void }) {
+export function PlayingMedia({ album, playback, media, left, size, onClose }: { album: AlbumDetail; playback: PlaybackState; media: PhysicalMediaStyle; left: number; size: number; onClose: () => void }) {
   const moving = playback.transport === 'PLAYING';
   const starting = playback.transport === 'TRANSITIONING';
   const previous = useRef({ trackId: playback.trackId, position: playback.positionSeconds });

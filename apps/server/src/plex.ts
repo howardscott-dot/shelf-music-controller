@@ -50,7 +50,7 @@ export class PlexClient {
     return {
       source: 'plex', id, title: item.title || 'Untitled album', artist: item.parentTitle || 'Unknown artist', year: item.year,
       genres: item.Genre?.map((genre) => genre.tag).filter((value): value is string => Boolean(value)) ?? [],
-      artworkUrl: `/api/plex/artwork/${encodeURIComponent(id)}?width=1200`, backArtworkUrl: '', spineUrl: `/api/plex/artwork/${encodeURIComponent(id)}?width=1200`
+      artworkUrl: `/api/plex/artwork/${encodeURIComponent(id)}?width=1200`, thumbnailUrl: `/api/plex/artwork/${encodeURIComponent(id)}?width=360`, backArtworkUrl: '', spineUrl: `/api/plex/artwork/${encodeURIComponent(id)}?width=1200`
     };
   }
   async albums(start = 0, limit = 100) {

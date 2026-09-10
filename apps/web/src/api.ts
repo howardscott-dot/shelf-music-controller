@@ -21,17 +21,45 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function waitForBrowseIdle(signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+    const browser = window as typeof window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    let idleId: number | undefined;
+    let timerId: number | undefined;
+    const cleanup = () => {
+      signal?.removeEventListener('abort', abort);
+      if (idleId !== undefined) browser.cancelIdleCallback?.(idleId);
+      if (timerId !== undefined) window.clearTimeout(timerId);
+    };
+    const finish = () => { cleanup(); resolve(); };
+    const abort = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')); };
+    signal?.addEventListener('abort', abort, { once: true });
+    if (browser.requestIdleCallback) idleId = browser.requestIdleCallback(finish, { timeout: 1_200 });
+    else timerId = window.setTimeout(finish, 350);
+  });
+}
+
 export function libraryApi(source: Source) {
   const prefix = source === 'spotify' ? '/api/spotify' : source === 'plex' ? '/api/plex' : source === 'files' ? '/api/files' : '/api';
   return {
-  albums: async () => {
+  albums: async (options?: { firstPageSize?: number; onFirstPage?: (value: { items: AlbumSummary[]; total: number }) => void; signal?: AbortSignal }) => {
     const items: AlbumSummary[] = [];
     let total = 1;
+    let first = true;
     while (items.length < total) {
-      const page = await request<{ items: AlbumSummary[]; total: number }>(`${prefix}/albums?start=${items.length}&limit=${source === 'spotify' ? 50 : 200}`);
+      const firstPage = first;
+      const limit = first && options?.firstPageSize ? options.firstPageSize : source === 'spotify' ? 50 : 200;
+      const page = await request<{ items: AlbumSummary[]; total: number }>(`${prefix}/albums?start=${items.length}&limit=${limit}`, { signal: options?.signal });
       items.push(...page.items);
       total = page.total;
+      if (firstPage && options?.onFirstPage) options.onFirstPage({ items: [...items], total });
+      first = false;
       if (!page.items.length) break;
+      if (options?.firstPageSize && items.length < total) await waitForBrowseIdle(options.signal);
     }
     return { items, total };
   },

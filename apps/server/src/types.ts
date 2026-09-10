@@ -7,6 +7,7 @@ export interface AlbumSummary {
   year?: number;
   genres: string[];
   artworkUrl: string;
+  thumbnailUrl?: string;
   backArtworkUrl: string;
   spineUrl: string;
 }

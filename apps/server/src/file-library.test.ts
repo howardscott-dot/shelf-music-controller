@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FileLibrary } from './file-library.js';
+import sharp from 'sharp';
 
 let directory: string | undefined;
 afterEach(async () => { if (directory) await rm(directory, { recursive: true, force: true }); directory = undefined; });
@@ -18,6 +19,7 @@ it('turns a mounted Artist/Album folder into a safe playable library with range-
   const album = await library.album(page.items[0]!.id); expect(album.tracks[0]?.title).toBe('01 - Track');
   expect(library.streamUrl(album.tracks[0]!.id)).toMatch(/^http:\/\/shelf\.local:8787\/api\/files\/audio\//);
   expect((await library.artwork(album.id))?.data.toString()).toBe('image');
+  expect(await library.artwork(album.id, 360)).toBeUndefined();
 });
 
 it('reopens a cached LAN library immediately and refreshes it explicitly', async () => {
@@ -34,4 +36,17 @@ it('reopens a cached LAN library immediately and refreshes it explicitly', async
   const reopened = new FileLibrary(directory, 'http://shelf.local:8787', cache);
   expect((await reopened.albums()).total).toBe(1);
   expect((await reopened.refresh()).albums).toBe(2);
+});
+
+it('serves a small cached browser thumbnail while preserving the full cover', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'shelf-files-cover-')); const albumDirectory = join(directory, 'Artist', 'Album'); await mkdir(albumDirectory, { recursive: true });
+  await writeFile(join(albumDirectory, '01 - Track.wav'), silentWave());
+  await writeFile(join(albumDirectory, 'cover.png'), await sharp({ create: { width: 1200, height: 1200, channels: 3, background: '#876543' } }).png().toBuffer());
+  const library = new FileLibrary(directory, 'http://shelf.local:8787'); const page = await library.albums();
+  expect(page.items[0]?.thumbnailUrl).toContain('width=360');
+  const preview = await library.artwork(page.items[0]!.id, 320);
+  expect(preview?.type).toBe('image/jpeg');
+  expect(await sharp(preview!.data).metadata()).toMatchObject({ width: 320, height: 320 });
+  expect(await library.artwork(page.items[0]!.id, 320)).toBe(preview);
+  expect((await sharp((await library.artwork(page.items[0]!.id))!.data).metadata()).format).toBe('png');
 });

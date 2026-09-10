@@ -11,7 +11,7 @@ import { buildApp } from './app.js';
 const clientId = 'a'.repeat(32);
 const albumId = 'a'.repeat(22);
 const trackId = 't'.repeat(22);
-const album = { id: albumId, name: 'A Real Album', artists: [{ name: 'An Artist' }], images: [{ url: 'https://i.scdn.co/image/cover', width: 640 }], release_date: '2024-01-01', tracks: { items: [{ id: trackId, name: 'Opening track', artists: [{ name: 'An Artist' }], track_number: 1, disc_number: 1, duration_ms: 180000 }], total: 1, next: null } };
+const album = { id: albumId, name: 'A Real Album', artists: [{ name: 'An Artist' }], images: [{ url: 'https://i.scdn.co/image/cover', width: 640 }, { url: 'https://i.scdn.co/image/cover-small', width: 300 }], release_date: '2024-01-01', tracks: { items: [{ id: trackId, name: 'Opening track', artists: [{ name: 'An Artist' }], track_number: 1, disc_number: 1, duration_ms: 180000 }], total: 1, next: null } };
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 const tokens = { access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600, scope: 'user-library-read user-read-playback-state user-modify-playback-state' };
 let directory: string;
@@ -102,7 +102,7 @@ describe('Spotify library and playback', () => {
     await connect();
     fetcher.mockResolvedValueOnce(json({ items: [{ album }], total: 1 }));
     const result = await client.albums(0, 20);
-    expect(result.items[0]).toMatchObject({ source: 'spotify', title: album.name, artworkUrl: album.images[0]!.url, spineUrl: '', backArtworkUrl: '', externalUrl: `https://open.spotify.com/album/${albumId}` });
+    expect(result.items[0]).toMatchObject({ source: 'spotify', title: album.name, artworkUrl: album.images[0]!.url, thumbnailUrl: album.images[1]!.url, spineUrl: '', backArtworkUrl: '', externalUrl: `https://open.spotify.com/album/${albumId}` });
     await client.albums(0, 20);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });

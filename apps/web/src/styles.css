@@ -276,3 +276,48 @@ main[data-environment] .shelf { background: linear-gradient(180deg, color-mix(in
 .manual-output > div { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .manual-output input { min-width: 0; height: 52px; padding: 0 14px; border: 1px solid #ffffff25; border-radius: 5px; background: #050605; color: #f0ebe1; font-size: 16px; user-select: text; }
 .manual-output small { color: #817b70; font-size: 10px; line-height: 1.55; }
+
+/* COVERS is a deliberately quiet, paged browser for older touch hardware.
+ * It keeps only ten modest thumbnails in the document and never builds the
+ * physical-spine or cassette-artwork layers. */
+.covers-browser { position: relative; min-width: 0; min-height: 0; width: 100%; height: 100%; overflow: hidden; padding: 20px 70px 10px; background: linear-gradient(180deg, #050605, #0a0b09 76%, #12100c); contain: layout paint; touch-action: pan-y; }
+.covers-grid { height: calc(100% - 50px); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: clamp(12px, 2.1vh, 20px) clamp(11px, 1.5vw, 22px); }
+.cover-tile { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) 49px; align-items: stretch; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: #eeeae0; cursor: pointer; touch-action: manipulation; }
+.cover-tile:focus-visible { outline: 2px solid #cdb174; outline-offset: 3px; }
+.cover-tile:active { border-color: #b99a5e5c; background: #ffffff05; }
+.cover-tile.loading { opacity: .58; }
+.cover-tile-art { position: relative; align-self: center; justify-self: center; width: min(100%, 24vh); aspect-ratio: 1; min-height: 0; overflow: hidden; display: grid; place-items: center; border: 1px solid #ffffff1c; border-radius: 3px; background: #151511; box-shadow: 0 7px 14px #0009; }
+.cover-tile-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cover-placeholder { width: 100%; height: 100%; display: grid; place-items: center; background: linear-gradient(145deg, #343027, #121311); color: #c6ae79; font: 500 clamp(20px, 4vw, 44px) DM Mono, monospace; letter-spacing: .08em; }
+.cover-tile-copy { min-width: 0; display: grid; align-content: center; gap: 3px; padding: 4px 3px 0; text-align: left; }
+.cover-tile-copy strong, .cover-tile-copy small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cover-tile-copy strong { font-size: 14px; font-weight: 600; }.cover-tile-copy small { color: #999387; font-size: 12px; }
+.cover-playing-mark { position: absolute; left: 7px; bottom: 7px; min-height: 24px; display: flex; align-items: center; padding: 0 8px; border: 1px solid #c9aa6d70; border-radius: 12px; background: #080907e8; color: #dec68f; font: 500 10px DM Mono, monospace; letter-spacing: .1em; }
+.covers-pagination { position: absolute; left: 50%; bottom: 7px; transform: translateX(-50%); height: 44px; display: grid; grid-template-columns: 48px minmax(104px, auto) 48px; align-items: center; gap: 7px; padding: 0 4px; border: 1px solid #ffffff14; border-radius: 24px; background: #050605; }
+.covers-pagination button { width: 44px; height: 40px; border: 0; border-radius: 20px; background: transparent; color: #d4c08e; font-size: 20px; cursor: pointer; touch-action: manipulation; }.covers-pagination button:active:not(:disabled) { background: #b99a5e19; }.covers-pagination button:disabled { opacity: .25; }
+.covers-pagination span { text-align: center; color: #aaa397; font: 500 12px DM Mono, monospace; letter-spacing: .07em; }
+.covers-focus-view { padding: 0; display: grid; place-items: center; }
+.covers-focus { width: 100%; height: 100%; min-height: 0; display: grid; place-items: center; padding: 12px; }
+.covers-focus-art { position: relative; height: calc(100% - 8px); max-width: calc(100% - 24px); aspect-ratio: 1; overflow: hidden; border: 1px solid #ffffff24; border-radius: 4px; background: #080908; box-shadow: 0 12px 28px #000c; }
+.covers-focus-art > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.covers-focus-copy { position: absolute; left: 0; right: 0; bottom: 0; min-height: 94px; display: grid; align-content: end; gap: 5px; padding: 28px 18px 15px; background: linear-gradient(transparent, #060706ee 45%); pointer-events: none; }
+.covers-focus-copy strong, .covers-focus-copy small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }.covers-focus-copy strong { font-size: clamp(16px, 2.5vh, 23px); }.covers-focus-copy small { color: #aaa397; font-size: 11px; }
+.covers-state { display: flex; align-items: center; gap: 7px; color: #d1b778; font: 500 11px DM Mono, monospace; letter-spacing: .1em; }.covers-state i { width: 6px; height: 6px; border-radius: 50%; background: #b99a5e; box-shadow: 0 0 7px #b99a5e88; }
+.covers-focus-close { position: absolute; z-index: 2; top: 12px; right: 12px; width: 52px; height: 52px; border: 1px solid #ffffff29; border-radius: 50%; background: #080908e8; color: #dedad0; font-size: 27px; cursor: pointer; touch-action: manipulation; }
+
+@media (max-width: 900px) {
+  .covers-browser { padding-inline: 58px; }
+  .covers-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); }
+  .cover-tile-art { width: min(100%, 17vh); }
+}
+@media (max-width: 600px) {
+  .covers-browser { padding: 12px 12px 8px; overflow-y: auto; }
+  .covers-grid { height: auto; min-height: calc(100% - 50px); grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: minmax(170px, 29vh); padding-bottom: 52px; }
+  .cover-tile-art { width: min(100%, 20vh); }
+  .covers-pagination { position: sticky; margin: 5px auto 0; transform: none; left: auto; bottom: 4px; width: max-content; }
+}
+
+.light-motion .cd-disc { animation-timing-function: steps(170, end); }
+.light-motion .cover-tile-art { box-shadow: 0 4px 9px #0008; }
+.light-motion .covers-focus-art { box-shadow: 0 8px 18px #000b; }
+@media (max-width: 760px) { .appearance-segments button { min-width: 82px; padding-inline: 10px; } }

@@ -1,11 +1,36 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { AlbumDetail, AlbumSummary, PlaybackState, SpineStyle, Track } from '../types';
 import { hashHue, versionedArtwork } from '../utils';
 import { CassetteCover, CassetteSpine } from './Cassette';
 import { useCassetteArtwork } from '../cassette-art';
 import { PlayingMedia } from './PlayingMedia';
+import { CoverShelf } from './CoverShelf';
 
-export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose, onPlay, spineStyle = 'cd', lightMotion = false }: { albums: AlbumSummary[]; selected?: AlbumDetail; playback?: PlaybackState; loadingId?: string; onSelect: (album: AlbumSummary) => void; onClose: () => void; onPlay: (track: Track) => void; spineStyle?: SpineStyle; lightMotion?: boolean }) {
+interface ShelfProps {
+  albums: AlbumSummary[];
+  selected?: AlbumDetail;
+  playback?: PlaybackState;
+  loadingId?: string;
+  onSelect: (album: AlbumSummary) => void;
+  onClose: () => void;
+  onPlay: (track: Track) => void;
+  spineStyle?: SpineStyle;
+  lightMotion?: boolean;
+  pageStart?: number;
+  totalAlbums?: number;
+  nextPageReady?: boolean;
+  pageBusy?: boolean;
+  onPreviousPage?: () => void;
+  onNextPage?: () => void;
+}
+
+export const Shelf = memo(function Shelf(props: ShelfProps) {
+  const { albums, selected, playback, loadingId, onSelect, onClose, onPlay, spineStyle = 'cd', lightMotion = false, pageStart = 0, totalAlbums = albums.length, nextPageReady = true, pageBusy = false, onPreviousPage = () => undefined, onNextPage = () => undefined } = props;
+  if (spineStyle === 'covers') return <CoverShelf albums={albums} selected={selected} playback={playback} loadingId={loadingId} start={pageStart} total={totalAlbums} nextReady={nextPageReady} pagingBusy={pageBusy} onSelect={onSelect} onClose={onClose} onPrevious={onPreviousPage} onNext={onNextPage} />;
+  return <PhysicalShelf albums={albums} selected={selected} playback={playback} loadingId={loadingId} onSelect={onSelect} onClose={onClose} onPlay={onPlay} spineStyle={spineStyle} lightMotion={lightMotion} />;
+});
+
+function PhysicalShelf({ albums, selected, playback, loadingId, onSelect, onClose, onPlay, spineStyle, lightMotion }: { albums: AlbumSummary[]; selected?: AlbumDetail; playback?: PlaybackState; loadingId?: string; onSelect: (album: AlbumSummary) => void; onClose: () => void; onPlay: (track: Track) => void; spineStyle: Exclude<SpineStyle, 'covers'>; lightMotion: boolean }) {
   const pitch = spineStyle === 'tape' ? 64 : 44;
   const previousPitch = useRef(pitch);
   const ref = useRef<HTMLDivElement>(null);
@@ -13,7 +38,7 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
   const rangeFrame = useRef<number | undefined>(undefined);
   const previousScrollLeft = useRef(0);
   const drag = useRef({ active: false, x: 0, y: 0, scrollLeft: 0 });
-  const [range, setRange] = useState({ start: 0, end: 60 });
+  const [range, setRange] = useState({ start: 0, end: 24 });
   const [openSize, setOpenSize] = useState(390);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [flippedAlbumId, setFlippedAlbumId] = useState<string>();
@@ -42,8 +67,8 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
       // iOS performs momentum scrolling on a separate compositor thread. Keep
       // roughly a viewport of real spines ready in the direction of travel and
       // move the React window only as it approaches the buffered edge.
-      const nearBuffer = Math.ceil(viewportItems * (movingRight ? .75 : 3));
-      const farBuffer = Math.ceil(viewportItems * (movingRight ? 3 : .75));
+      const nearBuffer = Math.ceil(viewportItems * (lightMotion ? (movingRight ? .5 : 1.25) : (movingRight ? .75 : 3)));
+      const farBuffer = Math.ceil(viewportItems * (lightMotion ? (movingRight ? 1.25 : .5) : (movingRight ? 3 : .75)));
       const guard = Math.max(4, Math.ceil(viewportItems * .65));
       const next = { start: Math.max(0, visibleStart - nearBuffer), end: Math.min(albums.length, visibleEnd + farBuffer) };
       setRange((current) => {
@@ -82,7 +107,7 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
   useEffect(() => {
     const el = ref.current;
     if (!el || selectedIndex < 0) return;
-    const frame = requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, leftFor(selectedIndex) - (el.clientWidth - openSize) / 2), behavior: 'smooth' }));
+    const frame = requestAnimationFrame(() => el.scrollTo({ left: Math.max(0, leftFor(selectedIndex) - (el.clientWidth - openSize) / 2), behavior: lightMotion ? 'auto' : 'smooth' }));
     return () => cancelAnimationFrame(frame);
   }, [leftFor, lightMotion, openSize, selected?.id, selectedIndex]);
 
@@ -115,7 +140,7 @@ export function Shelf({ albums, selected, playback, loadingId, onSelect, onClose
           </article>;
           }
           if (spineStyle === 'tape') return <CassetteSpine key={album.id} album={album} left={leftFor(index)} loading={loadingId === album.id} onSelect={() => { if (!moved.current) onSelect(album); }} />;
-          return <button key={album.id} className={`spine ${album.source === 'spotify' ? 'spotify-spine' : ''} ${loadingId === album.id ? 'loading' : ''}`} style={{ '--shelf-left': `${leftFor(index)}px`, '--hue': hashHue(album.id), backgroundImage: album.source === 'spotify' ? undefined : `linear-gradient(90deg, rgba(0,0,0,.2), rgba(255,255,255,.08), rgba(0,0,0,.38)), url(${album.spineUrl})` } as CSSProperties} onPointerDown={() => { if (album.artworkUrl) { const image = new Image(); image.src = album.source === 'spotify' ? album.artworkUrl : versionedArtwork(album.artworkUrl, 5); } }} onClick={() => { if (!moved.current) onSelect(album); }} title={`${album.artist} — ${album.title}`} aria-label={`${album.artist} — ${album.title}`}>
+          return <button key={album.id} className={`spine ${album.source === 'spotify' ? 'spotify-spine' : ''} ${loadingId === album.id ? 'loading' : ''}`} style={{ '--shelf-left': `${leftFor(index)}px`, '--hue': hashHue(album.id), backgroundImage: album.source === 'spotify' ? undefined : `linear-gradient(90deg, rgba(0,0,0,.2), rgba(255,255,255,.08), rgba(0,0,0,.38)), url(${album.spineUrl})` } as CSSProperties} onPointerDown={() => { if (!lightMotion && album.artworkUrl) { const image = new Image(); image.src = album.source === 'spotify' ? album.artworkUrl : versionedArtwork(album.artworkUrl, 5); } }} onClick={() => { if (!moved.current) onSelect(album); }} title={`${album.artist} — ${album.title}`} aria-label={`${album.artist} — ${album.title}`}>
             <span className="spine-title">{album.title}</span><span className="spine-artist">{album.artist}</span>
           </button>;
         })}

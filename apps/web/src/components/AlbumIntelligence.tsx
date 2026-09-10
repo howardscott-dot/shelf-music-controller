@@ -10,17 +10,17 @@ export function AlbumIntelligence({ data, loading, albumStory, albumStoryLoading
     <nav className="intelligence-tabs" aria-label="Information view"><button aria-pressed={view === 'album'} onClick={() => setView('album')}>ALBUM</button><button aria-pressed={view === 'songs'} onClick={() => setView('songs')}>SONGS &amp; LYRICS</button></nav>
     {loading && <div className="drawer-loading">Reading the record sleeve…</div>}
     {data && view === 'album' && <div className="intelligence-content">
-      <div className="intelligence-title"><img src={data.album.artworkUrl} alt="" /><div><small>{data.album.artist}</small><h2>{data.album.title}</h2></div></div>
+      <div className="intelligence-title"><img src={data.album.thumbnailUrl || data.album.artworkUrl} alt="" /><div><small>{data.album.artist}</small><h2>{data.album.title}</h2></div></div>
       <section><h3>RELEASE</h3><p>{data.context}</p></section>
       <section><h3>THE STORY</h3>{albumStoryLoading ? <p className="intelligence-pending">Looking for a reliable published account…</p> : albumStory ? <><p>{albumStory.text}</p><a className="intelligence-source" href={albumStory.sourceUrl} target="_blank" rel="noreferrer">SOURCE · {albumStory.sourceName} ↗</a></> : <p>No reliably sourced album story was found. SHELF will not invent one.</p>}</section>
       <section><h3>CREDITS</h3><p>{data.credits.length ? data.credits.join(' · ') : 'No performer credits are present in the connected metadata.'}</p></section>
       <section><h3>LINER NOTES</h3><p>{data.linerNotes}</p></section>
       <section><h3>YOUR LISTENING</h3><p>{data.listening.plays ? `${data.listening.plays} ${data.listening.plays === 1 ? 'play' : 'plays'} through SHELF${data.listening.lastPlayedAt ? ` · last played ${new Date(data.listening.lastPlayedAt).toLocaleDateString()}` : ''}.` : 'Not yet played through SHELF.'}</p></section>
-      <section><h3>RELATED ON THIS SHELF</h3><div className="related-albums">{data.related.length ? data.related.map((album) => <button key={album.id} onClick={() => onSelect(album)}><img src={album.artworkUrl} alt="" /><span>{album.title}<small>{album.artist}</small></span></button>) : <p>No close neighbours were found in the connected metadata.</p>}</div></section>
+      <section><h3>RELATED ON THIS SHELF</h3><div className="related-albums">{data.related.length ? data.related.map((album) => <button key={album.id} onClick={() => onSelect(album)}><img src={album.thumbnailUrl || album.artworkUrl} alt="" loading="lazy" decoding="async" /><span>{album.title}<small>{album.artist}</small></span></button>) : <p>No close neighbours were found in the connected metadata.</p>}</div></section>
       <p className="metadata-note">{data.note}</p>
     </div>}
     {data && view === 'songs' && <div className="intelligence-content song-intelligence">
-      <div className="intelligence-title"><img src={data.album.artworkUrl} alt="" /><div><small>SONGS ON</small><h2>{data.album.title}</h2></div></div>
+      <div className="intelligence-title"><img src={data.album.thumbnailUrl || data.album.artworkUrl} alt="" /><div><small>SONGS ON</small><h2>{data.album.title}</h2></div></div>
       <div className="intelligence-track-list">{data.album.tracks.map((track) => <button key={track.id} aria-pressed={trackData?.track.id === track.id} onClick={() => onTrack(track)}><span>{track.index || '·'}</span><strong>{track.title}</strong><small>{time(track.durationSeconds)}</small></button>)}</div>
       {trackLoading && <div className="drawer-loading track-loading">Finding lyrics and a sourced song story…</div>}
       {trackData && !trackLoading && <div className="track-intelligence-result">

@@ -2,7 +2,7 @@
 
 **A touch-first, self-hosted album browser and music remote for Jellyfin, Plex, Spotify, NAS folders and UPnP/DLNA streamers.**
 
-SHELF turns a personal music collection into a tactile, full-screen shelf of readable CD or cassette spines. It runs on an always-on home server, works especially well on a tablet, and sends music directly to a chosen network player rather than routing audio through the browser.
+SHELF turns a personal music collection into a tactile, full-screen shelf of readable CD or cassette spines, with an efficient paged cover browser for older tablets. It runs on an always-on home server and sends music directly to a chosen network player rather than routing audio through the browser.
 
 Choose Jellyfin, Plex, Spotify Premium or a mounted music folder when SHELF opens. The footer's **Source** button returns to the chooser without stopping music. Apple Music is visibly reserved as **Coming soon**, not presented as an implemented integration.
 
@@ -21,7 +21,7 @@ Compatible local outputs are discovered from their real UPnP device descriptions
 
 ## Highlights
 
-- Touch-first horizontal browsing with readable CD and cassette spines.
+- Three remembered touch-first views: readable CD spines, cassette spines and a lightweight paged cover browser.
 - Full-height album covers, an animated transparent CD player and a photographic cassette transport.
 - Persistent album playback with next, previous, play/pause, seek, volume and random controls.
 - Natural-language Music Guide, touch keyboard search, Album Intelligence and small personal crates.
@@ -47,7 +47,7 @@ Compatible local outputs are discovered from their real UPnP device descriptions
 
 ![SHELF's source and appearance chooser](docs/screenshots/01-source-picker.jpg)
 
-Choose **CD spines** or **Tapes** on the launch screen, or use the **CDs/Tapes** footer button while browsing. Tape mode uses genuine cassette packaging from MusicBrainz/Cover Art Archive when it can match the edition, and a restrained readable text insert when it cannot. Your display choice is saved per browser/device and applies across compatible sources. Switching styles preserves the open cover and browsing position and never changes playback. Genuine back-cover controls appear only when that artwork exists; Spotify artwork stays unmodified in CD mode.
+Choose **CD spines**, **Tapes** or **Covers** on the launch screen, or cycle through them with the view button in the footer. Tape mode uses genuine cassette packaging from MusicBrainz/Cover Art Archive when it can match the edition, and a restrained readable text insert when it cannot. Covers renders ten resized thumbnails at a time, supports touch swiping and page buttons, and uses a static full-height now-playing cover to minimise animation and image-decoding work. A first visit from an older iPad defaults to Covers; any saved choice is always respected. Your display choice is saved per browser/device and applies across compatible sources. Changing the view never changes playback. Genuine back-cover controls appear only when that artwork exists; Spotify artwork stays unmodified in CD mode.
 
 ## How it works
 
@@ -60,7 +60,7 @@ Browser (React/Vite) → SHELF server (Fastify/TypeScript)
 Music URL ─────────────────────────────→ Selected network player → amplifier
 ```
 
-The server keeps credentials and LAN protocols out of the browser. Local-library views poll the selected player every two seconds. Spotify uses its Web API to control a user-selected Spotify Connect device; it never sends Spotify audio through the local-library/UPnP path. Playback polling is shared/cached across clients, slows down on errors, and skips hidden tabs.
+The server keeps credentials and LAN protocols out of the browser. Local-library views poll the selected player every two seconds (four seconds in the older-iPad Covers view), but position-only updates are isolated from the collection so they do not redraw the shelf. Spotify uses its Web API to control a user-selected Spotify Connect device; it never sends Spotify audio through the local-library/UPnP path. Playback polling is shared/cached across clients, slows down on errors, and skips hidden tabs.
 
 ## Requirements
 
@@ -131,7 +131,7 @@ Implemented: complete Jellyfin, Plex and mounted-folder collections, cover artwo
 
 Local-library album playback is owned by the server. Starting a track loads its album queue in source order and, where supported, preloads the next track with `SetNextAVTransportURI`. The server observes the renderer's track URI and replenishes its next-track buffer; the player performs the actual transition even if the browser closes or the iPad sleeps. Next/Previous use this shared queue, not the browsed album or stale browser state. The album stops at its end; explicit stops stay stopped. A different source taking over relinquishes the local queue. Queue updates retry transient connection failures and report a warning. The in-memory album queue is not restored after a service restart, so start an album again after updating/restarting SHELF.
 
-Also implemented: a five-source launch chooser (including the honest Apple Music placeholder), touch-keyboard search and clear-filter, a natural-language music guide, an optional metadata/listening-history drawer, small persistent personal crates, four subtle room atmospheres, footer transport and random-track controls, centered album expansion, remembered network-player selection, and a persistent mounted-folder catalogue.
+Also implemented: a five-source launch chooser (including the honest Apple Music placeholder), three saved collection views including the low-overhead Covers mode, touch-keyboard search and clear-filter, a natural-language music guide, an optional metadata/listening-history drawer, small persistent personal crates, four subtle room atmospheres, footer transport and random-track controls, centered album expansion, remembered network-player selection, and a persistent mounted-folder catalogue.
 
 ## Local control API
 

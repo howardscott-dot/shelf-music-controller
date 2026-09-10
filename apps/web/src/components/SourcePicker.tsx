@@ -28,7 +28,7 @@ export function SourcePicker({ status, error, notice, onChoose, onRefresh, spine
           <span className="source-number">05 / STREAMING</span><strong>Apple Music</strong><span>A place for your next collection.</span><span className="source-action">COMING SOON</span>
         </button>
       </div>
-      <div className="appearance-choice" role="group" aria-label="Shelf appearance"><span>SHELF STYLE</span><div className="appearance-segments"><button aria-pressed={spineStyle === 'cd'} onClick={() => onSpineStyle('cd')}>CD SPINES</button><button aria-pressed={spineStyle === 'tape'} onClick={() => onSpineStyle('tape')}>TAPES</button></div><small>Same collection. A different feel.</small></div>
+      <div className="appearance-choice" role="group" aria-label="Shelf appearance"><span>SHELF STYLE</span><div className="appearance-segments"><button aria-pressed={spineStyle === 'cd'} onClick={() => onSpineStyle('cd')}>CD SPINES</button><button aria-pressed={spineStyle === 'tape'} onClick={() => onSpineStyle('tape')}>TAPES</button><button aria-pressed={spineStyle === 'covers'} onClick={() => onSpineStyle('covers')}>COVERS</button></div><small>Same collection. A faster album view for older screens.</small></div>
       {setup && <section className="source-setup" aria-label="Connect Spotify">
         <div><h2>{spotify?.configured ? 'Connect your Premium account' : 'One small setup, then just music.'}</h2>
           <p>{spotify?.configured ? 'Sign in once on the setup computer. Your connection stays on the SHELF server for every device on your LAN.' : 'Create a SHELF Web API app in Spotify’s developer dashboard, then add its Client ID to the SHELF server. No Client Secret or password is needed.'}</p>
