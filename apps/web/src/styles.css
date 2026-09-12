@@ -69,7 +69,10 @@ header p, .status, .shelf-label, .eyebrow { font: 400 10px DM Mono, monospace; l
   .search-overlay { padding: 8px; }.search-panel { width: 100%; padding: 14px; }.search-heading { margin-bottom: 10px; }.search-field { height: 58px; margin-bottom: 12px; }.search-field button { padding: 0 9px; }.touch-keyboard { gap: 6px; }.key-row { gap: 5px; }.key-row button { height: 50px; min-width: 0; }.key-actions .space { flex-basis: 240px; }
 }
 @media (max-height: 520px) and (min-width: 761px) { main { grid-template-rows: minmax(0, 1fr) 88px; }.now-art { width: 52px; height: 52px; }.album-view { padding-top: 16px; padding-bottom: 16px; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  .cd-disc, .photographic-hub > i, .cd-laser-line { animation: none !important; }
+}
 
 /* Source selection keeps SHELF's quiet, warm palette and generous touch targets. */
 .source-screen { display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: clamp(24px, 6vw, 90px); background: radial-gradient(ellipse at 50% 0, #20221c 0, #0c0d0b 55%, #060706 100%); }
@@ -182,7 +185,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid #d9bf8b; outline-offs
 .cassette-status-glow { position: absolute; z-index: 4; right: 18%; top: 22%; width: 18%; height: 2px; background: linear-gradient(90deg, transparent, var(--tape-accent), transparent); opacity: .6; box-shadow: 0 0 8px color-mix(in srgb, var(--tape-accent) 55%, transparent); pointer-events: none; }
 .cassette-status-glow i { position: absolute; right: -8px; top: 50%; width: 4px; height: 4px; transform: translateY(-50%); border-radius: 50%; background: var(--tape-accent); box-shadow: 0 0 9px var(--tape-accent); }
 .cassette-reflection { position: absolute; z-index: 4; inset: -35% auto -35% 17%; width: 10%; transform: rotate(11deg); background: linear-gradient(90deg, transparent, #ffffff0c, transparent); filter: blur(1px); pointer-events: none; }
-@keyframes photographic-hub-rotation { to { transform: rotate(360deg); } }
+@keyframes photographic-hub-rotation { from { transform: translate3d(0, 0, 0) rotate(0deg); } to { transform: translate3d(0, 0, 0) rotate(360deg); } }
 .is-rewinding .cassette-window { filter: drop-shadow(0 0 6px #d3a9544a); }
 
 @media (max-height: 520px) and (min-width: 761px) {
@@ -317,7 +320,6 @@ main[data-environment] .shelf { background: linear-gradient(180deg, color-mix(in
   .covers-pagination { position: sticky; margin: 5px auto 0; transform: none; left: auto; bottom: 4px; width: max-content; }
 }
 
-.light-motion .cd-disc { animation-timing-function: steps(170, end); }
 .light-motion .cover-tile-art { box-shadow: 0 4px 9px #0008; }
 .light-motion .covers-focus-art { box-shadow: 0 8px 18px #000b; }
 @media (max-width: 760px) { .appearance-segments button { min-width: 82px; padding-inline: 10px; } }
